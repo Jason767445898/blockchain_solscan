@@ -1,0 +1,21 @@
+[project]
+name = "pump-wallet-tool"
+version = "0.1.0"
+description = "Pump.fun wallet monitor, market collector, and behavior analyst."
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.31.0",
+]
+
+[project.scripts]
+pump-tool = "pump_tool:main"
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
