@@ -146,6 +146,112 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def cli_scan(
+    rpc_url: str,
+    wallet: str,
+    limit: int,
+    verbose: bool,
+    refresh_seen: bool,
+    pump_program_ids: list[str] | None,
+    data_dir: str,
+) -> None:
+    """Public entry point for scan subcommand from pump_tool.py."""
+    args = argparse.Namespace(
+        rpc_url=rpc_url,
+        wallet=wallet,
+        limit=limit,
+        verbose=verbose,
+        refresh_seen=refresh_seen,
+        pump_program_id=pump_program_ids or [],
+        output_dir=data_dir,
+        source="rpc",
+        api_key=None,
+        rpc_min_interval=1.0,
+        include_other=False,
+        no_details=False,
+        category=[],
+    )
+    store = TransactionStore(data_dir)
+    client, source_error = build_client(args)
+    extra_pump_program_ids = parse_program_ids(os.getenv("PUMP_PROGRAM_IDS")) | set(args.pump_program_id)
+    seen = set() if refresh_seen else store.seen_signatures(wallet)
+    scan_once(
+        client,
+        store,
+        wallet=wallet,
+        seen=seen,
+        limit=limit,
+        include_other=args.include_other,
+        categories=set(args.category),
+        with_details=not args.no_details,
+        verbose=verbose,
+        extra_pump_program_ids=extra_pump_program_ids,
+    )
+
+
+def cli_dedupe(wallet: str, data_dir: str) -> None:
+    """Public entry point for dedupe subcommand from pump_tool.py."""
+    store = TransactionStore(data_dir)
+    kept = store.dedupe(wallet)
+    print(f"deduped output for {wallet}; kept {kept} unique records")
+
+
+def cli_tokens(wallet: str, data_dir: str) -> None:
+    """Public entry point for tokens subcommand from pump_tool.py."""
+    store = TransactionStore(data_dir)
+    summaries = store.meme_token_summaries(wallet)
+    print_meme_token_summaries(summaries)
+    path = store.write_meme_token_csv(wallet, summaries)
+    print(f"wrote {path}")
+
+
+def cli_market(
+    wallet: str,
+    data_dir: str,
+    helius_api_key: str,
+    market_dir: str | None,
+) -> None:
+    """Public entry point for market subcommand from pump_tool.py."""
+    if not helius_api_key:
+        raise SystemExit("--helius-api-key or HELIUS_API_KEY is required for market collection")
+    args = argparse.Namespace(
+        wallet=wallet,
+        output_dir=data_dir,
+        helius_api_key=helius_api_key,
+        market_dir=market_dir,
+        helius_base_url=os.getenv("HELIUS_BASE_URL", "https://api-mainnet.helius-rpc.com"),
+        helius_min_interval=float(os.getenv("HELIUS_MIN_INTERVAL", "0.25")),
+        market_window_buffer=300,
+        market_page_limit=100,
+        market_max_pages=20,
+        market_token_limit=None,
+    )
+    fetch_market_trades(args, TransactionStore(data_dir))
+
+
+def cli_inspect(
+    rpc_url: str,
+    signature: str,
+    pump_program_ids: list[str] | None,
+    verbose: bool,
+) -> None:
+    """Public entry point for inspect subcommand from pump_tool.py."""
+    args = argparse.Namespace(
+        rpc_url=rpc_url,
+        signature=signature,
+        pump_program_id=pump_program_ids or [],
+        verbose=verbose,
+        output_dir="data",
+        source="rpc",
+        rpc_min_interval=1.0,
+    )
+    from .rpc import SolanaRpcClient
+
+    client = SolanaRpcClient(rpc_url, min_interval=1.0)
+    extra_pump_program_ids = parse_program_ids(os.getenv("PUMP_PROGRAM_IDS")) | set(args.pump_program_id)
+    inspect_signature(client, signature, "", extra_pump_program_ids)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -323,9 +429,7 @@ def fetch_market_trades(args: argparse.Namespace, store: TransactionStore) -> No
     if not meme_tokens_path.exists():
         summaries = store.meme_token_summaries(args.wallet)
         if not summaries:
-            raise RuntimeError(
-                f"{meme_tokens_path} does not exist and no local wallet trades were found to build it"
-            )
+            raise RuntimeError(f"{meme_tokens_path} does not exist and no local wallet trades were found to build it")
         store.write_meme_token_csv(args.wallet, summaries)
 
     windows = read_meme_token_windows(meme_tokens_path, buffer_seconds=args.market_window_buffer)

@@ -4,9 +4,6 @@ import argparse
 import os
 from pathlib import Path
 
-from pump_monitor import monitor
-
-
 DEFAULT_WALLET = "55PB376nxsrBLTZr1UdQSk6M89AxPif6oKmbmZmWq5dr"
 
 
@@ -112,56 +109,56 @@ def add_analyze_options(parser: argparse.ArgumentParser) -> None:
 
 
 def run_scan(args: argparse.Namespace) -> int:
-    return monitor.main(scan_args(args))
+    from pump_monitor import monitor
+
+    monitor.cli_scan(
+        rpc_url=args.rpc_url,
+        wallet=args.wallet,
+        limit=args.limit,
+        verbose=getattr(args, "verbose", False),
+        refresh_seen=getattr(args, "refresh_seen", False),
+        pump_program_ids=getattr(args, "pump_program_ids", None),
+        data_dir=args.data_dir,
+    )
+    return 0
 
 
 def run_dedupe(args: argparse.Namespace) -> int:
-    return monitor.main(base_monitor_args(args) + ["--dedupe"])
+    from pump_monitor import monitor
+
+    monitor.cli_dedupe(wallet=args.wallet, data_dir=args.data_dir)
+    return 0
 
 
 def run_tokens(args: argparse.Namespace) -> int:
-    return monitor.main(base_monitor_args(args) + ["--meme-tokens", "--meme-tokens-csv"])
+    from pump_monitor import monitor
+
+    monitor.cli_tokens(wallet=args.wallet, data_dir=args.data_dir)
+    return 0
 
 
 def run_market(args: argparse.Namespace) -> int:
-    if not args.helius_api_key:
-        raise SystemExit("--helius-api-key or HELIUS_API_KEY is required for market collection")
-    market_args = base_monitor_args(args) + [
-        "--market-trades",
-        "--helius-api-key",
-        args.helius_api_key,
-        "--helius-base-url",
-        args.helius_base_url,
-        "--helius-min-interval",
-        str(args.helius_min_interval),
-        "--market-window-buffer",
-        str(args.market_window_buffer),
-        "--market-page-limit",
-        str(args.market_page_limit),
-        "--market-max-pages",
-        str(args.market_max_pages),
-    ]
-    if args.market_token_limit is not None:
-        market_args.extend(["--market-token-limit", str(args.market_token_limit)])
-    return monitor.main(market_args)
+    from pump_monitor import monitor
+
+    monitor.cli_market(
+        wallet=args.wallet,
+        data_dir=args.data_dir,
+        helius_api_key=args.helius_api_key,
+        market_dir=getattr(args, "market_dir", None),
+    )
+    return 0
 
 
 def run_inspect(args: argparse.Namespace) -> int:
-    inspect_args = base_monitor_args(args) + [
-        "--source",
-        args.source,
-        "--rpc-min-interval",
-        str(args.rpc_min_interval),
-        "--inspect-signature",
-        args.signature,
-    ]
-    if args.source == "rpc":
-        inspect_args.extend(["--rpc-url", args.rpc_url])
-    if args.source == "solscan" and args.api_key:
-        inspect_args.extend(["--api-key", args.api_key])
-    for program_id in args.pump_program_id:
-        inspect_args.extend(["--pump-program-id", program_id])
-    return monitor.main(inspect_args)
+    from pump_monitor import monitor
+
+    monitor.cli_inspect(
+        rpc_url=args.rpc_url,
+        signature=args.signature,
+        pump_program_ids=getattr(args, "pump_program_ids", None),
+        verbose=getattr(args, "verbose", False),
+    )
+    return 0
 
 
 def run_analyze(args: argparse.Namespace) -> int:
@@ -181,55 +178,29 @@ def run_analyze(args: argparse.Namespace) -> int:
 
 
 def run_pipeline(args: argparse.Namespace) -> int:
+    from pump_monitor import monitor
+
     if not args.skip_scan:
-        code = run_scan(args)
-        if code:
-            return code
-    code = run_dedupe(args)
-    if code:
-        return code
-    code = run_tokens(args)
-    if code:
-        return code
-    if not args.skip_market:
-        code = run_market(args)
-        if code:
-            return code
+        monitor.cli_scan(
+            rpc_url=args.rpc_url,
+            wallet=args.wallet,
+            limit=args.limit,
+            verbose=getattr(args, "verbose", False),
+            refresh_seen=getattr(args, "refresh_seen", False),
+            pump_program_ids=getattr(args, "pump_program_ids", None),
+            data_dir=args.data_dir,
+        )
+    monitor.cli_dedupe(wallet=args.wallet, data_dir=args.data_dir)
+    monitor.cli_tokens(wallet=args.wallet, data_dir=args.data_dir)
+
+    if not args.skip_market and args.helius_api_key:
+        monitor.cli_market(
+            wallet=args.wallet,
+            data_dir=args.data_dir,
+            helius_api_key=args.helius_api_key,
+            market_dir=getattr(args, "market_dir", None),
+        )
     return run_analyze(args)
-
-
-def scan_args(args: argparse.Namespace) -> list[str]:
-    result = base_monitor_args(args) + [
-        "--source",
-        args.source,
-        "--limit",
-        str(args.limit),
-        "--rpc-min-interval",
-        str(args.rpc_min_interval),
-        "--poll-seconds",
-        str(getattr(args, "poll_seconds", 30)),
-    ]
-    if args.source == "rpc":
-        result.extend(["--rpc-url", args.rpc_url])
-    if args.source == "solscan" and args.api_key:
-        result.extend(["--api-key", args.api_key])
-    if not getattr(args, "watch", False):
-        result.append("--once")
-    if args.include_other:
-        result.append("--include-other")
-    if args.no_details:
-        result.append("--no-details")
-    if args.refresh_seen:
-        result.append("--refresh-seen")
-    if args.verbose:
-        result.append("--verbose")
-    for category in args.category:
-        result.extend(["--category", category])
-    return result
-
-
-def base_monitor_args(args: argparse.Namespace) -> list[str]:
-    return ["--wallet", args.wallet, "--output-dir", args.data_dir]
 
 
 def main(argv: list[str] | None = None) -> int:

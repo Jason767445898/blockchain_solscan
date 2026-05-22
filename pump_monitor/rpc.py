@@ -4,8 +4,10 @@ import itertools
 import json
 import time
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+import requests
+
+from ._base_client import BaseApiClient
 
 
 DEFAULT_RPC_URL = "https://api.mainnet-beta.solana.com"
@@ -15,7 +17,7 @@ class RpcError(RuntimeError):
     """Raised when the Solana RPC endpoint returns an error."""
 
 
-class SolanaRpcClient:
+class SolanaRpcClient(BaseApiClient):
     def __init__(
         self,
         rpc_url: str = DEFAULT_RPC_URL,
@@ -24,13 +26,15 @@ class SolanaRpcClient:
         max_retries: int = 3,
         retry_sleep: float = 3.0,
     ) -> None:
+        super().__init__(
+            min_interval=min_interval,
+            max_retries=max_retries,
+            retry_sleep=retry_sleep,
+            timeout=timeout,
+        )
         self.rpc_url = rpc_url
-        self.timeout = timeout
-        self.min_interval = min_interval
-        self.max_retries = max_retries
-        self.retry_sleep = retry_sleep
         self._ids = itertools.count(1)
-        self._last_request_at = 0.0
+        self._session = requests.Session()
 
     def account_transactions(
         self,
@@ -65,54 +69,49 @@ class SolanaRpcClient:
         return _normalize_transaction_detail(signature, result)
 
     def _call(self, method: str, params: list[Any]) -> Any:
-        elapsed = time.monotonic() - self._last_request_at
-        if elapsed < self.min_interval:
-            time.sleep(self.min_interval - elapsed)
-
         payload = {
             "jsonrpc": "2.0",
             "id": next(self._ids),
             "method": method,
             "params": params,
         }
-        request = Request(
-            self.rpc_url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"content-type": "application/json"},
-            method="POST",
-        )
+
         for attempt in range(self.max_retries + 1):
             try:
-                with urlopen(request, timeout=self.timeout) as response:
-                    self._last_request_at = time.monotonic()
-                    body = json.loads(response.read().decode("utf-8"))
-                    break
-            except HTTPError as exc:
-                self._last_request_at = time.monotonic()
-                if exc.code == 429 and attempt < self.max_retries:
-                    time.sleep(self.retry_sleep * (attempt + 1))
+                self._rate_limit()
+                response = self._session.post(self.rpc_url, json=payload, timeout=self.timeout)
+                self._mark_request()
+                response.raise_for_status()
+                body = response.json()
+                break
+            except requests.HTTPError as exc:
+                self._mark_request()
+                if exc.response is not None and exc.response.status_code == 429 and attempt < self.max_retries:
+                    time.sleep(self._retry_delay(attempt))
                     continue
-                if exc.code == 429:
+                if exc.response is not None and exc.response.status_code == 429:
                     raise RpcError(
                         "RPC rate limit reached after retries; use --limit 3, increase "
                         "--rpc-min-interval, or use another RPC URL"
                     ) from exc
-                raise RpcError(f"RPC HTTP {exc.code}: {exc.read().decode('utf-8', errors='replace')[:300]}") from exc
-            except URLError as exc:
-                self._last_request_at = time.monotonic()
-                raise RpcError(f"Cannot connect to RPC endpoint: {exc.reason}") from exc
+                if exc.response is not None:
+                    raise RpcError(f"RPC HTTP {exc.response.status_code}: {exc.response.text[:300]}") from exc
+                raise RpcError(f"RPC HTTP error: {exc}") from exc
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                self._mark_request()
+                if attempt < self.max_retries:
+                    time.sleep(self._retry_delay(attempt))
+                    continue
+                raise RpcError(f"Cannot connect to RPC endpoint: {exc}") from exc
             except json.JSONDecodeError as exc:
-                self._last_request_at = time.monotonic()
+                self._mark_request()
                 raise RpcError("RPC returned invalid JSON") from exc
-        else:
-            raise RpcError("RPC request failed after retries")
 
         if "error" in body:
             error = body["error"]
             if isinstance(error, dict) and error.get("code") == 429:
                 raise RpcError(
-                    "RPC rate limit reached; use --limit 3, increase --rpc-min-interval, "
-                    "or use another RPC URL"
+                    "RPC rate limit reached; use --limit 3, increase --rpc-min-interval, or use another RPC URL"
                 )
             raise RpcError(f"RPC error from {method}: {body['error']}")
         return body.get("result")

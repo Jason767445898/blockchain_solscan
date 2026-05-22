@@ -14,17 +14,22 @@
 
 ```text
 pump_tool.py                         统一 CLI 入口
+pyproject.toml                       项目元数据和 ruff 配置
 pump_monitor/                        数据采集、分类、落盘
-  monitor.py                         原始底层 CLI 和流程编排
+  _base_client.py                    限频与重试基类
+  _utils.py                          共享工具函数
   rpc.py                             Solana JSON-RPC 客户端
   solscan.py                         Solscan Pro 客户端
   classifier.py                      Pump 交易分类逻辑
   meme_tokens.py                     钱包交易过的 meme token 汇总
   market_trades.py                   Helius 市场交易窗口抓取与标准化
   storage.py                         JSONL/CSV 存储层
+  monitor.py                         原始底层 CLI 和流程编排
 pump_analyst/                        行为画像和报告生成
   analyze.py                         可导入、可 `python -m` 的分析入口
-  analyze_entry&exit_conditions.py   现有开仓/清仓特征计算脚本
+  cli.py                             分析子命令 CLI 入口
+  _conditions.py                     核心特征计算
+  _reports.py                        报告生成
 data/                                默认数据输出目录
 pump_analyst/results/                默认分析报告输出目录
 ```
@@ -125,6 +130,6 @@ pump-tool --help
 
 新增交易分类规则：修改 `pump_monitor/classifier.py`，必要时用 `--inspect-signature` 对单笔交易诊断。
 
-新增指标或报告：在 `pump_analyst/analyze_entry&exit_conditions.py` 里增加特征字段、汇总规则和报告段落。
+新增指标或报告：在 `pump_analyst/_conditions.py` 里增加特征字段，在 `pump_analyst/_reports.py` 里补充报告段落和汇总规则。
 
 新增一键流程：优先修改 `pump_tool.py`，保持底层模块可单独运行。

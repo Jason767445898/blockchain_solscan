@@ -11,6 +11,9 @@ from urllib.parse import urlencode
 
 import requests
 
+from ._base_client import BaseApiClient
+from ._utils import as_list, float_or_none, int_or_none, str_or_none
+
 
 DEFAULT_HELIUS_BASE_URL = "https://api-mainnet.helius-rpc.com"
 LAMPORTS_PER_SOL = 1_000_000_000
@@ -51,7 +54,7 @@ class MemeTokenWindow:
         }
 
 
-class HeliusEnhancedClient:
+class HeliusEnhancedClient(BaseApiClient):
     def __init__(
         self,
         api_key: str,
@@ -62,13 +65,9 @@ class HeliusEnhancedClient:
         max_retries: int = 3,
         retry_sleep: float = 2.0,
     ) -> None:
+        super().__init__(min_interval=min_interval, max_retries=max_retries, retry_sleep=retry_sleep, timeout=timeout)
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
-        self.min_interval = min_interval
-        self.max_retries = max_retries
-        self.retry_sleep = retry_sleep
-        self._last_request_at = 0.0
 
     def address_transactions(
         self,
@@ -96,22 +95,20 @@ class HeliusEnhancedClient:
         return self._get(url)
 
     def _get(self, url: str) -> list[dict[str, Any]]:
-        elapsed = time.monotonic() - self._last_request_at
-        if elapsed < self.min_interval:
-            time.sleep(self.min_interval - elapsed)
+        self._rate_limit()
 
         for attempt in range(self.max_retries + 1):
             try:
                 response = requests.get(url, timeout=self.timeout)
-                self._last_request_at = time.monotonic()
+                self._mark_request()
             except requests.RequestException as exc:
                 if attempt < self.max_retries:
-                    time.sleep(self.retry_sleep * (attempt + 1))
+                    time.sleep(self._retry_delay(attempt))
                     continue
                 raise HeliusError(f"Cannot connect to Helius: {exc}") from exc
 
             if response.status_code == 429 and attempt < self.max_retries:
-                time.sleep(self.retry_sleep * (attempt + 1))
+                time.sleep(self._retry_delay(attempt))
                 continue
             if not response.ok:
                 raise HeliusError(f"Helius HTTP {response.status_code}: {response.text[:300]}")
@@ -133,13 +130,13 @@ def read_meme_token_windows(path: str | Path, *, buffer_seconds: int = 300) -> l
         reader = csv.DictReader(csv_file)
         for row in reader:
             mint = (row.get("mint") or "").strip()
-            first_block_time = _int_or_none(row.get("first_block_time"))
-            last_block_time = _int_or_none(row.get("last_block_time"))
+            first_block_time = int_or_none(row.get("first_block_time"))
+            last_block_time = int_or_none(row.get("last_block_time"))
             if not mint or first_block_time is None or last_block_time is None:
                 continue
 
-            net_tokens = _float_or_none(row.get("net_tokens"))
-            sell_tx = _int_or_none(row.get("sell_tx")) or 0
+            net_tokens = float_or_none(row.get("net_tokens"))
+            sell_tx = int_or_none(row.get("sell_tx")) or 0
             is_closed = sell_tx > 0 and net_tokens is not None and abs(net_tokens) < 1e-9
             windows.append(
                 MemeTokenWindow(
@@ -183,7 +180,7 @@ def fetch_market_transactions(
         last_signature: str | None = None
         added_from_page = 0
         for tx in page:
-            signature = _str_or_none(tx.get("signature"))
+            signature = str_or_none(tx.get("signature"))
             if not signature or signature in seen_signatures:
                 continue
             seen_signatures.add(signature)
@@ -219,15 +216,15 @@ def normalize_market_transaction(tx: dict[str, Any], window: MemeTokenWindow) ->
     return {
         "mint": window.mint,
         "symbol": window.symbol,
-        "signature": _str_or_none(tx.get("signature")),
-        "timestamp": _int_or_none(tx.get("timestamp")),
-        "time_utc": format_block_time(_int_or_none(tx.get("timestamp"))),
-        "slot": _int_or_none(tx.get("slot")),
-        "type": _str_or_none(tx.get("type")),
-        "source": _str_or_none(tx.get("source")),
-        "fee": _int_or_none(tx.get("fee")),
-        "fee_payer": _str_or_none(tx.get("feePayer")),
-        "description": _str_or_none(tx.get("description")),
+        "signature": str_or_none(tx.get("signature")),
+        "timestamp": int_or_none(tx.get("timestamp")),
+        "time_utc": format_block_time(int_or_none(tx.get("timestamp"))),
+        "slot": int_or_none(tx.get("slot")),
+        "type": str_or_none(tx.get("type")),
+        "source": str_or_none(tx.get("source")),
+        "fee": int_or_none(tx.get("fee")),
+        "fee_payer": str_or_none(tx.get("feePayer")),
+        "description": str_or_none(tx.get("description")),
         "trade_side": _trade_side(token_flow, sol_flow),
         "token_amount": token_amount or None,
         "sol_amount": sol_amount,
@@ -276,19 +273,19 @@ def _token_flow(tx: dict[str, Any], mint: str) -> dict[str, Any]:
     transfer_count = 0
 
     swap = _event_swap(tx)
-    for item in _as_list(swap.get("tokenInputs")):
-        if _str_or_none(item.get("mint")) == mint:
+    for item in as_list(swap.get("tokenInputs")):
+        if str_or_none(item.get("mint")) == mint:
             amount = _token_amount(item)
             if amount is not None:
                 input_amount += amount
-    for item in _as_list(swap.get("tokenOutputs")):
-        if _str_or_none(item.get("mint")) == mint:
+    for item in as_list(swap.get("tokenOutputs")):
+        if str_or_none(item.get("mint")) == mint:
             amount = _token_amount(item)
             if amount is not None:
                 output_amount += amount
 
-    for item in _as_list(tx.get("tokenTransfers")):
-        if _str_or_none(item.get("mint")) != mint:
+    for item in as_list(tx.get("tokenTransfers")):
+        if str_or_none(item.get("mint")) != mint:
             continue
         amount = _token_amount(item)
         if amount is None:
@@ -319,7 +316,7 @@ def _sol_flow(tx: dict[str, Any]) -> dict[str, Any]:
         native_output_sol = _lamports_to_sol(native_output.get("amount")) or 0.0
 
     native_transfer_sol = 0.0
-    for item in _as_list(tx.get("nativeTransfers")):
+    for item in as_list(tx.get("nativeTransfers")):
         amount = _lamports_to_sol(item.get("amount")) if isinstance(item, dict) else None
         if amount is None:
             continue
@@ -362,61 +359,27 @@ def _event_swap(tx: dict[str, Any]) -> dict[str, Any]:
 
 def _token_amount(item: dict[str, Any]) -> float | None:
     for key in ("tokenAmount", "amount"):
-        amount = _float_or_none(item.get(key))
+        amount = float_or_none(item.get(key))
         if amount is not None:
             return amount
 
     raw = item.get("rawTokenAmount")
     if isinstance(raw, dict):
-        amount = _float_or_none(raw.get("tokenAmount"))
-        decimals = _int_or_none(raw.get("decimals")) or 0
+        amount = float_or_none(raw.get("tokenAmount"))
+        decimals = int_or_none(raw.get("decimals")) or 0
         if amount is not None:
             return amount / (10**decimals)
     return None
 
 
 def _latest_timestamp(page: list[dict[str, Any]]) -> int | None:
-    timestamps = [_int_or_none(item.get("timestamp")) for item in page]
+    timestamps = [int_or_none(item.get("timestamp")) for item in page]
     timestamps = [item for item in timestamps if item is not None]
     return max(timestamps) if timestamps else None
 
 
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
-
-
-def _str_or_none(value: Any) -> str | None:
-    return value if isinstance(value, str) else None
-
-
-def _int_or_none(value: Any) -> int | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return None
-    return None
-
-
-def _float_or_none(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value)
-        except ValueError:
-            return None
-    return None
-
-
 def _lamports_to_sol(value: Any) -> float | None:
-    amount = _float_or_none(value)
+    amount = float_or_none(value)
     if amount is None:
         return None
     return amount / LAMPORTS_PER_SOL

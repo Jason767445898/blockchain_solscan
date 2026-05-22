@@ -5,12 +5,14 @@ from typing import Any
 
 import requests
 
+from ._base_client import BaseApiClient
+
 
 class SolscanError(RuntimeError):
     """Raised when Solscan returns an error or an unexpected payload."""
 
 
-class SolscanClient:
+class SolscanClient(BaseApiClient):
     """Small wrapper around Solscan Pro API v2."""
 
     def __init__(
@@ -19,11 +21,11 @@ class SolscanClient:
         base_url: str = "https://pro-api.solscan.io/v2.0",
         timeout: int = 20,
         min_interval: float = 0.2,
+        max_retries: int = 3,
+        retry_sleep: float = 3.0,
     ) -> None:
+        super().__init__(min_interval=min_interval, max_retries=max_retries, retry_sleep=retry_sleep, timeout=timeout)
         self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
-        self.min_interval = min_interval
-        self._last_request_at = 0.0
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -57,28 +59,41 @@ class SolscanClient:
         return payload
 
     def _get(self, path: str, params: dict[str, Any]) -> Any:
-        elapsed = time.monotonic() - self._last_request_at
-        if elapsed < self.min_interval:
-            time.sleep(self.min_interval - elapsed)
-
         url = f"{self.base_url}{path}"
-        response = self.session.get(url, params=params, timeout=self.timeout)
-        self._last_request_at = time.monotonic()
+        for attempt in range(self.max_retries + 1):
+            self._rate_limit()
+            try:
+                response = self.session.get(url, params=params, timeout=self.timeout)
+                self._mark_request()
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                self._mark_request()
+                if attempt < self.max_retries:
+                    time.sleep(self._retry_delay(attempt))
+                    continue
+                raise SolscanError(f"Cannot connect to Solscan: {exc}") from exc
 
-        if response.status_code == 429:
-            raise SolscanError("Solscan rate limit reached; increase poll interval or lower limit")
-        if response.status_code == 401:
-            raise SolscanError(
-                "Solscan rejected this API key. Your current key is probably Free Level 1, "
-                "but this endpoint requires a higher API key level. Upgrade the Solscan API key "
-                "or switch this monitor to another data source."
-            )
-        if response.status_code >= 400:
-            raise SolscanError(f"Solscan HTTP {response.status_code}: {response.text[:300]}")
+            if response.status_code == 429:
+                if attempt < self.max_retries:
+                    time.sleep(self._retry_delay(attempt))
+                    continue
+                raise SolscanError("Solscan rate limit reached; increase poll interval or lower limit")
+            if response.status_code == 401:
+                raise SolscanError(
+                    "Solscan rejected this API key. Your current key is probably Free Level 1, "
+                    "but this endpoint requires a higher API key level. Upgrade the Solscan API key "
+                    "or switch this monitor to another data source."
+                )
+            if response.status_code >= 500:
+                if attempt < self.max_retries:
+                    time.sleep(self._retry_delay(attempt))
+                    continue
+                raise SolscanError(f"Solscan HTTP {response.status_code}: {response.text[:300]}")
+            if response.status_code >= 400:
+                raise SolscanError(f"Solscan HTTP {response.status_code}: {response.text[:300]}")
 
-        body = response.json()
-        if isinstance(body, dict) and body.get("success") is False:
-            raise SolscanError(f"Solscan API error: {body.get('message') or body}")
-        if isinstance(body, dict) and "data" in body:
-            return body["data"]
-        return body
+            body = response.json()
+            if isinstance(body, dict) and body.get("success") is False:
+                raise SolscanError(f"Solscan API error: {body.get('message') or body}")
+            if isinstance(body, dict) and "data" in body:
+                return body["data"]
+            return body

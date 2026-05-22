@@ -118,6 +118,7 @@ def _collect_program_ids(summary: dict[str, Any], detail: dict[str, Any] | None)
         walk(detail)
     return ids
 
+
 def _wallet_sol_change(detail: dict[str, Any] | None, wallet: str) -> float | None:
     if not detail:
         return None

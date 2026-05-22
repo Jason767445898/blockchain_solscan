@@ -17,3 +17,6 @@ build/
 dist/
 
 *.log
+
+data/
+pump_analyst/results/
