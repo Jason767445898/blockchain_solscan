@@ -14,6 +14,7 @@
 
 ```text
 pump_tool.py                         统一 CLI 入口
+webui.py                             Gradio Web UI 入口（浏览器操作）
 pyproject.toml                       项目元数据和 ruff 配置
 pump_monitor/                        数据采集、分类、落盘
   _base_client.py                    限频与重试基类
@@ -50,6 +51,29 @@ flowchart LR
 ```
 
 ## 推荐使用方式
+
+### 方式一：Web UI（推荐新手）
+
+在浏览器中操作所有功能，无需记忆命令行参数：
+
+```bash
+source .venv/bin/activate
+python webui.py
+# 浏览器打开 http://0.0.0.0:7860
+```
+
+界面包含 6 个标签页：
+
+| 标签 | 功能 |
+|------|------|
+| 🚀 Pipeline | 一键运行完整流程（扫描→去重→代币汇总→市场交易→分析报告） |
+| 🔍 Scan | 抓取钱包交易并分类 Pump 活动 |
+| 📊 Market | 拉取每个 mint 的市场交易窗口 |
+| 🔎 Inspect | 诊断单笔交易的 Pump 分类详情 |
+| 📈 Analyze | 生成开仓/清仓行为画像报告 |
+| 📁 Results | 浏览 CSV 表格、Markdown 报告、原始 JSONL 数据 |
+
+### 方式二：命令行
 
 先配置环境：
 

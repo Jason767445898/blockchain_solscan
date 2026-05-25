@@ -8,6 +8,12 @@
 python pump_tool.py <command>
 ```
 
+也支持 Web UI 在浏览器中操作：
+
+```bash
+python webui.py                      # 浏览器打开 http://0.0.0.0:7860
+```
+
 完整流程说明见 [docs/PROJECT_FLOW.md](/Users/lijason/Desktop/blockchain_solscan/docs/PROJECT_FLOW.md)。
 
 ## 功能
@@ -24,6 +30,13 @@ python pump_tool.py <command>
   - `data/<wallet>.meme_tokens.csv`：目标钱包交易过的 meme token 汇总
   - `data/<wallet>.market_trades/`：每个 token 的市场交易窗口
   - `pump_analyst/results/<wallet>/`：开仓/清仓画像、CSV 特征和 Markdown 报告
+- **Web UI**：Gradio 浏览器界面，6 个标签页覆盖所有功能：
+  - 🚀 Pipeline — 一键运行完整流程，含进度条
+  - 🔍 Scan — 抓取并分类钱包交易
+  - 📊 Market — 拉取市场交易窗口
+  - 🔎 Inspect — 诊断单笔交易分类
+  - 📈 Analyze — 生成开仓/清仓报告
+  - 📁 Results — 浏览 CSV 表格和 Markdown 报告
 
 ## 快速开始
 
@@ -42,6 +55,14 @@ pip install -r requirements.txt
 ```bash
 pip install -e .
 pump-tool --help
+```
+
+如果只想用 Web UI，到这里就可以直接启动了：
+
+```bash
+python webui.py
+# 浏览器打开 http://0.0.0.0:7860
+# 在界面里填好钱包地址、RPC URL、Helius API Key 即可使用全部功能
 ```
 
 2. 申请一个 Helius 免费 RPC URL。
@@ -382,6 +403,30 @@ token_changes: amount 为负数
 ```
 
 因此它是卖出：钱包 SOL 增加，Pump token 数量减少。
+
+## Web UI
+
+除了命令行，本项目还提供了基于 [Gradio](https://www.gradio.app/) 的 Web 界面，可在浏览器中操作所有功能。
+
+**启动：**
+
+```bash
+source .venv/bin/activate
+python webui.py
+```
+
+浏览器打开 `http://0.0.0.0:7860` 后，你会看到 6 个标签页：
+
+| 标签 | 对应命令 | 说明 |
+|------|---------|------|
+| 🚀 Pipeline | `pipeline` | 一键运行完整流程，顶部 Settings 面板填入钱包/RPC/Helius Key 后点击按钮即可。支持跳过已有数据的步骤。 |
+| 🔍 Scan | `scan` | 从 RPC 抓取钱包交易并分类。可设置抓取数量、是否刷新已见过的签名。 |
+| 📊 Market | `market` | 基于 `meme_tokens.csv` 拉取每个 mint 的市场交易窗口。**需要 Helius API Key。** |
+| 🔎 Inspect | `inspect` | 粘贴一笔交易签名，查看其 program IDs、分类结果、SOL/token 变化。适合调试分类漏识别。 |
+| 📈 Analyze | `analyze` | 基于本地已有数据生成开仓/清仓行为画像报告。可调整最小有效 SOL 阈值。 |
+| 📁 Results | — | 浏览已生成的文件：CSV 以表格展示、Markdown 以渲染文本展示、JSONL 以原始文本展示。 |
+
+界面顶部有一个 **⚙️ Settings** 面板，钱包地址、RPC URL、Helius API Key 和 Data Directory 在所有标签页中共享。
 
 ## 后续可扩展
 

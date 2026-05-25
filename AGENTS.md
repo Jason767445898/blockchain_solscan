@@ -5,12 +5,13 @@
 **Branch:** main
 
 ## OVERVIEW
-Python 3.9+ CLI pipeline that monitors Solana wallets for Pump.fun/PumpSwap meme-coin activity, fetches market-trade windows via Helius API, and generates entry/exit behavior analysis reports.
+Python 3.9+ CLI pipeline that monitors Solana wallets for Pump.fun/PumpSwap meme-coin activity, fetches market-trade windows via Helius API, and generates entry/exit behavior analysis reports. Also includes a Gradio web UI for browser-based operation.
 
 ## STRUCTURE
 ```
 ./
 ├── pump_tool.py          # Unified CLI — all commands funnel through here
+├── webui.py              # Gradio web UI — browser-based interface to all pipeline features
 ├── pyproject.toml         # Project metadata, deps, ruff config (line-length=120, py39)
 ├── pump_monitor/          # Data collection: RPC, classification, storage
 │   ├── _base_client.py   #   BaseApiClient — shared rate-limit, retry, timeout
@@ -47,6 +48,8 @@ Python 3.9+ CLI pipeline that monitors Solana wallets for Pump.fun/PumpSwap meme
 | Add Pump program IDs | `classifier.py` ⇒ `PUMP_FUN_PROGRAM_IDS` / `PUMP_SWAP_PROGRAM_IDS` | Or via `--pump-program-id` / `PUMP_PROGRAM_IDS` env var |
 | Diagnostic single TX | `pump_tool.py inspect <SIGNATURE>` | Prints program IDs, classification, SOL/token changes |
 | Pipeline orchestration | `pump_tool.py` ⇒ `run_pipeline()` | scan → dedupe → tokens → market → analyze |
+| Launch web UI | `webui.py` ⇒ `build_ui()` | Gradio Blocks app with 6 tabs covering all subcommands |
+| Change web UI layout | `webui.py` ⇒ `build_ui()` | Tab-based: Pipeline, Scan, Market, Inspect, Analyze, Results |
 
 ## CODE MAP
 | Symbol | Type | Location | Role |
@@ -66,6 +69,8 @@ Python 3.9+ CLI pipeline that monitors Solana wallets for Pump.fun/PumpSwap meme
 | `cli.main()` | function | `pump_analyst/cli.py:30` | Standalone argparser + analysis orchestration |
 | `analyze.main()` | function | `pump_analyst/analyze.py:9` | Module-invocation wrapper → delegates to `cli.main()` |
 | `monitor.cli_*()` | function group | `pump_monitor/monitor.py:149+` | Bridge functions: `cli_scan()`, `cli_dedupe()`, `cli_tokens()`, `cli_market()`, `cli_inspect()` |
+| `webui.build_ui()` | function | `webui.py` | Gradio Blocks UI construction — all tabs, settings panel, event wiring |
+| `webui.do_pipeline()` | function | `webui.py` | Pipeline wrapper with progress bar — orchestrates scan→dedupe→tokens→market→analyze |
 
 ## CONVENTIONS
 - `from __future__ import annotations` in EVERY .py file — deferred evaluation, enables `|` union syntax
@@ -121,13 +126,16 @@ python pump_tool.py --wallet <ADDR> --rpc-url "<RPC>" inspect <SIGNATURE>
 # Module-level invocation
 python -m pump_monitor.monitor --wallet <ADDR> --once --limit 5
 python -m pump_analyst.analyze --wallet <ADDR>
+
+# Web UI (browser-based)
+python webui.py                        # Opens at http://0.0.0.0:7860
 ```
 
 ## NOTES
 - No tests exist. No CI.
 - Ruff configured in `pyproject.toml` — `line-length=120`, `target-version="py39"`, lint rules `E,F,W,I,N,UP`, double quotes format.
 - `pyproject.toml` is the authoritative dependency source; `setup.cfg` is legacy.
-- Only 1 external dep (`requests`). Adding more needs justification in `pyproject.toml` and `requirements.txt`.
+- Only 2 external deps (`requests`, `gradio`). Adding more needs justification in `pyproject.toml` and `requirements.txt`.
 - Single `DEFAULT_WALLET` in `pump_tool.py:7`: `DEFAULT_WALLET = "55PB376nxsrBLTZr1UdQSk6M89AxPif6oKmbmZmWq5dr"` (was previously duplicated in the deleted legacy analyzer).
 - `data/` and `pump_analyst/results/` are in `.gitignore`.
 - Timestamp handling: all 3 API clients (`BaseApiClient` subclasses) now share identical rate-limiting via `_rate_limit()` + `_mark_request()`.
