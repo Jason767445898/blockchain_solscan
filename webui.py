@@ -3,8 +3,10 @@ from __future__ import annotations
 import csv
 import io
 import os
+import time
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from typing import Any
 
 import gradio as gr
 
@@ -12,6 +14,20 @@ import gradio as gr
 DEFAULT_WALLET = os.getenv("SOLSCAN_WALLET", "55PB376nxsrBLTZr1UdQSk6M89AxPif6oKmbmZmWq5dr")
 DEFAULT_RPC = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 DEFAULT_DATA_DIR = os.getenv("SOLSCAN_OUTPUT_DIR", "data")
+DEFAULT_WEBUI_PORT = int(os.getenv("PUMP_WEBUI_PORT", "7862"))
+SCREENER_TABLE_TYPES = [
+    "str",
+    "number",
+    "str",
+    "number",
+    "number",
+    "number",
+    "number",
+    "number",
+    "number",
+    "number",
+    "number",
+]
 
 
 # --- Output Capture ---
@@ -140,6 +156,225 @@ def do_pipeline(
 
     progress(1.0, desc="Pipeline complete!")
     return "\n\n".join(results)
+
+
+# --- Realtime Screener Helpers ---
+
+
+def _build_screener(
+    helius_api_key: str,
+    data_dir: str,
+    min_effective_sol: float,
+    max_age_s: int,
+    min_trade_count: int,
+    min_unique_buyers: int,
+    min_buy_sol: float,
+    min_last60_trade_count: int,
+    min_last60_sol: float,
+    min_buy_ratio: float,
+    max_last_trade_gap_s: int,
+    discovery_limit: int,
+    market_limit: int,
+    max_candidates: int,
+    telegram_bot_token: str,
+    telegram_chat_id: str,
+) -> Any:
+    from pump_monitor.screener import EntryRule, RealtimeScreener, ScreenerConfig
+
+    rule = EntryRule(
+        max_age_s=int(max_age_s),
+        min_trade_count=int(min_trade_count),
+        min_unique_buyers=int(min_unique_buyers),
+        min_buy_sol=float(min_buy_sol),
+        min_last60_trade_count=int(min_last60_trade_count),
+        min_last60_sol=float(min_last60_sol),
+        min_buy_ratio=float(min_buy_ratio),
+        max_last_trade_gap_s=int(max_last_trade_gap_s),
+        min_effective_sol=float(min_effective_sol),
+    )
+    config = ScreenerConfig(
+        helius_api_key=helius_api_key.strip(),
+        data_dir=data_dir,
+        discovery_limit=int(discovery_limit),
+        market_limit=int(market_limit),
+        max_candidates=int(max_candidates),
+        candidate_max_age_s=max(int(max_age_s) + 60, 240),
+        rule=rule,
+        telegram_bot_token=telegram_bot_token.strip(),
+        telegram_chat_id=telegram_chat_id.strip(),
+    )
+    return RealtimeScreener(config)
+
+
+def _screener_settings_key(
+    helius_api_key: str,
+    data_dir: str,
+    min_effective_sol: float,
+    max_age_s: int,
+    min_trade_count: int,
+    min_unique_buyers: int,
+    min_buy_sol: float,
+    min_last60_trade_count: int,
+    min_last60_sol: float,
+    min_buy_ratio: float,
+    max_last_trade_gap_s: int,
+    discovery_limit: int,
+    market_limit: int,
+    max_candidates: int,
+    telegram_bot_token: str,
+    telegram_chat_id: str,
+) -> tuple[Any, ...]:
+    return (
+        helius_api_key.strip(),
+        data_dir,
+        float(min_effective_sol),
+        int(max_age_s),
+        int(min_trade_count),
+        int(min_unique_buyers),
+        float(min_buy_sol),
+        int(min_last60_trade_count),
+        float(min_last60_sol),
+        float(min_buy_ratio),
+        int(max_last_trade_gap_s),
+        int(discovery_limit),
+        int(market_limit),
+        int(max_candidates),
+        bool(telegram_bot_token.strip()),
+        telegram_chat_id.strip(),
+    )
+
+
+def run_screener_once(
+    helius_api_key: str,
+    data_dir: str,
+    min_effective_sol: float,
+    max_age_s: int,
+    min_trade_count: int,
+    min_unique_buyers: int,
+    min_buy_sol: float,
+    min_last60_trade_count: int,
+    min_last60_sol: float,
+    min_buy_ratio: float,
+    max_last_trade_gap_s: int,
+    discovery_limit: int,
+    market_limit: int,
+    max_candidates: int,
+    telegram_bot_token: str,
+    telegram_chat_id: str,
+    screener_state: Any,
+) -> tuple[list[list[Any]], list[list[Any]], str, Any]:
+    from pump_monitor.screener import load_alert_rows, rows_for_table, summarize_poll
+
+    if not helius_api_key.strip():
+        return [], rows_for_table(load_alert_rows(data_dir)), "Helius API key is required.", screener_state
+
+    settings_key = _screener_settings_key(
+        helius_api_key,
+        data_dir,
+        min_effective_sol,
+        max_age_s,
+        min_trade_count,
+        min_unique_buyers,
+        min_buy_sol,
+        min_last60_trade_count,
+        min_last60_sol,
+        min_buy_ratio,
+        max_last_trade_gap_s,
+        discovery_limit,
+        market_limit,
+        max_candidates,
+        telegram_bot_token,
+        telegram_chat_id,
+    )
+    if screener_state is None or getattr(screener_state, "_webui_settings_key", None) != settings_key:
+        screener_state = _build_screener(
+            helius_api_key,
+            data_dir,
+            min_effective_sol,
+            max_age_s,
+            min_trade_count,
+            min_unique_buyers,
+            min_buy_sol,
+            min_last60_trade_count,
+            min_last60_sol,
+            min_buy_ratio,
+            max_last_trade_gap_s,
+            discovery_limit,
+            market_limit,
+            max_candidates,
+            telegram_bot_token,
+            telegram_chat_id,
+        )
+        screener_state._webui_settings_key = settings_key
+
+    try:
+        result = screener_state.poll_once()
+    except Exception as exc:
+        return [], rows_for_table(load_alert_rows(data_dir)), f"[ERROR] {exc}", screener_state
+
+    return (
+        rows_for_table(result["rows"]),
+        rows_for_table(load_alert_rows(data_dir)),
+        summarize_poll(result),
+        screener_state,
+    )
+
+
+def run_screener_loop(
+    helius_api_key: str,
+    data_dir: str,
+    min_effective_sol: float,
+    max_age_s: int,
+    min_trade_count: int,
+    min_unique_buyers: int,
+    min_buy_sol: float,
+    min_last60_trade_count: int,
+    min_last60_sol: float,
+    min_buy_ratio: float,
+    max_last_trade_gap_s: int,
+    discovery_limit: int,
+    market_limit: int,
+    max_candidates: int,
+    telegram_bot_token: str,
+    telegram_chat_id: str,
+    poll_seconds: int,
+    cycles: int,
+    screener_state: Any,
+    progress: gr.Progress = gr.Progress(),
+) -> tuple[list[list[Any]], list[list[Any]], str, Any]:
+    latest_candidates: list[list[Any]] = []
+    latest_alerts: list[list[Any]] = []
+    latest_status = ""
+    for index in range(max(1, int(cycles))):
+        progress((index + 1) / max(1, int(cycles)), desc=f"Polling {index + 1}/{int(cycles)}")
+        latest_candidates, latest_alerts, latest_status, screener_state = run_screener_once(
+            helius_api_key,
+            data_dir,
+            min_effective_sol,
+            max_age_s,
+            min_trade_count,
+            min_unique_buyers,
+            min_buy_sol,
+            min_last60_trade_count,
+            min_last60_sol,
+            min_buy_ratio,
+            max_last_trade_gap_s,
+            discovery_limit,
+            market_limit,
+            max_candidates,
+            telegram_bot_token,
+            telegram_chat_id,
+            screener_state,
+        )
+        if index < int(cycles) - 1:
+            time.sleep(max(1, int(poll_seconds)))
+    return latest_candidates, latest_alerts, latest_status, screener_state
+
+
+def reset_screener_state(data_dir: str) -> tuple[list[list[Any]], list[list[Any]], str, None]:
+    from pump_monitor.screener import load_alert_rows, rows_for_table
+
+    return [], rows_for_table(load_alert_rows(data_dir)), "Realtime screener state reset.", None
 
 
 # --- Results Tab Helpers ---
@@ -272,6 +507,165 @@ def build_ui() -> gr.Blocks:
 
         # --- Main Tabs ---
         with gr.Tabs():
+            # ============================
+            # Realtime Screener Tab
+            # ============================
+            with gr.TabItem("Realtime Screener"):
+                gr.Markdown("Visual realtime screening for fresh Pump mints using the entry profile from reports.")
+                screener_state = gr.State(value=None)
+
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        with gr.Group():
+                            min_effective_sol_rt = gr.Number(
+                                label="Min Effective SOL",
+                                value=0.005,
+                                minimum=0.0,
+                                step=0.001,
+                            )
+                            max_age_rt = gr.Number(label="Max Age Seconds", value=180, minimum=1, precision=0)
+                            min_trades_rt = gr.Number(label="Min Trades", value=15, minimum=0, precision=0)
+                            min_buyers_rt = gr.Number(label="Min Unique Buyers", value=10, minimum=0, precision=0)
+                            min_buy_sol_rt = gr.Number(label="Min Buy SOL", value=5.0, minimum=0.0, step=0.1)
+                            min_last60_trades_rt = gr.Number(
+                                label="Min Last 60s Trades",
+                                value=5,
+                                minimum=0,
+                                precision=0,
+                            )
+                            min_last60_sol_rt = gr.Number(
+                                label="Min Last 60s SOL",
+                                value=2.0,
+                                minimum=0.0,
+                                step=0.1,
+                            )
+                            min_buy_ratio_rt = gr.Slider(
+                                label="Min Buy Ratio",
+                                value=0.55,
+                                minimum=0.0,
+                                maximum=1.0,
+                                step=0.01,
+                            )
+                            max_gap_rt = gr.Number(label="Max Last Trade Gap Seconds", value=10, minimum=0, precision=0)
+                        with gr.Group():
+                            discovery_limit_rt = gr.Number(
+                                label="Discovery Page Limit",
+                                value=30,
+                                minimum=1,
+                                maximum=100,
+                                precision=0,
+                            )
+                            market_limit_rt = gr.Number(
+                                label="Market Page Limit",
+                                value=100,
+                                minimum=1,
+                                maximum=100,
+                                precision=0,
+                            )
+                            max_candidates_rt = gr.Number(
+                                label="Max Candidates Shown",
+                                value=20,
+                                minimum=1,
+                                maximum=100,
+                                precision=0,
+                            )
+                            poll_seconds_rt = gr.Number(label="Poll Seconds", value=8, minimum=1, precision=0)
+                            cycles_rt = gr.Number(label="Loop Cycles", value=5, minimum=1, maximum=100, precision=0)
+                        with gr.Accordion("Telegram Alerts", open=False):
+                            telegram_token_rt = gr.Textbox(
+                                label="Bot Token",
+                                type="password",
+                                placeholder="Optional",
+                            )
+                            telegram_chat_rt = gr.Textbox(
+                                label="Chat ID",
+                                placeholder="Optional",
+                            )
+                        with gr.Row():
+                            run_screener_once_btn = gr.Button("Poll Once", variant="primary")
+                            run_screener_loop_btn = gr.Button("Run Loop")
+                            reset_screener_btn = gr.Button("Reset")
+
+                    with gr.Column(scale=3):
+                        screener_status = gr.Textbox(
+                            label="Status",
+                            lines=6,
+                            max_lines=12,
+                            elem_classes="output-log",
+                        )
+                        candidate_table = gr.Dataframe(
+                            label="Live Candidates",
+                            headers=[
+                                "match",
+                                "score",
+                                "mint",
+                                "age_s",
+                                "trades",
+                                "buyers",
+                                "buy_sol",
+                                "last60_trades",
+                                "last60_sol",
+                                "buy_ratio",
+                                "gap_s",
+                            ],
+                            datatype=SCREENER_TABLE_TYPES,
+                            row_count=(12, "dynamic"),
+                            wrap=True,
+                        )
+                        alert_table = gr.Dataframe(
+                            label="Matched Alerts",
+                            headers=[
+                                "match",
+                                "score",
+                                "mint",
+                                "age_s",
+                                "trades",
+                                "buyers",
+                                "buy_sol",
+                                "last60_trades",
+                                "last60_sol",
+                                "buy_ratio",
+                                "gap_s",
+                            ],
+                            datatype=SCREENER_TABLE_TYPES,
+                            row_count=(8, "dynamic"),
+                            wrap=True,
+                        )
+
+                screener_inputs = [
+                    helius_key_input,
+                    data_dir_input,
+                    min_effective_sol_rt,
+                    max_age_rt,
+                    min_trades_rt,
+                    min_buyers_rt,
+                    min_buy_sol_rt,
+                    min_last60_trades_rt,
+                    min_last60_sol_rt,
+                    min_buy_ratio_rt,
+                    max_gap_rt,
+                    discovery_limit_rt,
+                    market_limit_rt,
+                    max_candidates_rt,
+                    telegram_token_rt,
+                    telegram_chat_rt,
+                ]
+                run_screener_once_btn.click(
+                    fn=run_screener_once,
+                    inputs=[*screener_inputs, screener_state],
+                    outputs=[candidate_table, alert_table, screener_status, screener_state],
+                )
+                run_screener_loop_btn.click(
+                    fn=run_screener_loop,
+                    inputs=[*screener_inputs, poll_seconds_rt, cycles_rt, screener_state],
+                    outputs=[candidate_table, alert_table, screener_status, screener_state],
+                )
+                reset_screener_btn.click(
+                    fn=reset_screener_state,
+                    inputs=data_dir_input,
+                    outputs=[candidate_table, alert_table, screener_status, screener_state],
+                )
+
             # ============================
             # Pipeline Tab
             # ============================
@@ -514,6 +908,6 @@ demo = build_ui()
 if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
-        server_port=7860,
+        server_port=DEFAULT_WEBUI_PORT,
         share=False,
     )

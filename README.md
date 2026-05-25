@@ -11,7 +11,7 @@ python pump_tool.py <command>
 也支持 Web UI 在浏览器中操作：
 
 ```bash
-python webui.py                      # 浏览器打开 http://0.0.0.0:7860
+python webui.py                      # 浏览器打开 http://0.0.0.0:7862
 ```
 
 完整流程说明见 [docs/PROJECT_FLOW.md](/Users/lijason/Desktop/blockchain_solscan/docs/PROJECT_FLOW.md)。
@@ -30,7 +30,8 @@ python webui.py                      # 浏览器打开 http://0.0.0.0:7860
   - `data/<wallet>.meme_tokens.csv`：目标钱包交易过的 meme token 汇总
   - `data/<wallet>.market_trades/`：每个 token 的市场交易窗口
   - `pump_analyst/results/<wallet>/`：开仓/清仓画像、CSV 特征和 Markdown 报告
-- **Web UI**：Gradio 浏览器界面，6 个标签页覆盖所有功能：
+- **Web UI**：Gradio 浏览器界面，7 个标签页覆盖所有功能：
+  - Realtime Screener — 按报告画像实时筛选新 Pump mint，可选 Telegram 命中通知
   - 🚀 Pipeline — 一键运行完整流程，含进度条
   - 🔍 Scan — 抓取并分类钱包交易
   - 📊 Market — 拉取市场交易窗口
@@ -61,7 +62,7 @@ pump-tool --help
 
 ```bash
 python webui.py
-# 浏览器打开 http://0.0.0.0:7860
+# 浏览器打开 http://0.0.0.0:7862
 # 在界面里填好钱包地址、RPC URL、Helius API Key 即可使用全部功能
 ```
 
@@ -415,10 +416,11 @@ source .venv/bin/activate
 python webui.py
 ```
 
-浏览器打开 `http://0.0.0.0:7860` 后，你会看到 6 个标签页：
+浏览器打开 `http://0.0.0.0:7862` 后，你会看到 7 个标签页：
 
 | 标签 | 对应命令 | 说明 |
 |------|---------|------|
+| Realtime Screener | — | 使用 Helius 按 Pump program 发现新 mint，计算报告里的入场画像指标，命中后记录到 `data/realtime_screener/alerts.jsonl`，可选发 Telegram。 |
 | 🚀 Pipeline | `pipeline` | 一键运行完整流程，顶部 Settings 面板填入钱包/RPC/Helius Key 后点击按钮即可。支持跳过已有数据的步骤。 |
 | 🔍 Scan | `scan` | 从 RPC 抓取钱包交易并分类。可设置抓取数量、是否刷新已见过的签名。 |
 | 📊 Market | `market` | 基于 `meme_tokens.csv` 拉取每个 mint 的市场交易窗口。**需要 Helius API Key。** |
@@ -427,10 +429,11 @@ python webui.py
 | 📁 Results | — | 浏览已生成的文件：CSV 以表格展示、Markdown 以渲染文本展示、JSONL 以原始文本展示。 |
 
 界面顶部有一个 **⚙️ Settings** 面板，钱包地址、RPC URL、Helius API Key 和 Data Directory 在所有标签页中共享。
+默认端口是 `7862`，可以用 `PUMP_WEBUI_PORT=7863 python webui.py` 改到其他端口。
 
 ## 后续可扩展
 
-- 增加 Telegram / Discord 通知
+- 增加 Discord 通知
 - 对接 SQLite 或 Postgres
 - 加入钱包标签，如聪明钱、开发者钱包、狙击钱包
 - 增加收益、持仓、买入均价、卖出胜率统计

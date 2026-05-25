@@ -59,13 +59,14 @@ flowchart LR
 ```bash
 source .venv/bin/activate
 python webui.py
-# 浏览器打开 http://0.0.0.0:7860
+# 浏览器打开 http://0.0.0.0:7862
 ```
 
-界面包含 6 个标签页：
+界面包含 7 个标签页：
 
 | 标签 | 功能 |
 |------|------|
+| Realtime Screener | 按开仓画像实时筛选新 Pump mint，可选 Telegram 命中通知 |
 | 🚀 Pipeline | 一键运行完整流程（扫描→去重→代币汇总→市场交易→分析报告） |
 | 🔍 Scan | 抓取钱包交易并分类 Pump 活动 |
 | 📊 Market | 拉取每个 mint 的市场交易窗口 |

@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-
 MIN_EFFECTIVE_SOL = 0.005
 
 
@@ -159,47 +158,52 @@ def read_raw_market_txs(path: Path, mint: str, csv_by_sig: dict[str, dict[str, s
         for line in jsonl_file:
             tx = json.loads(line)
             sig = tx.get("signature") or ""
-            csv_row = csv_by_sig.get(sig, {})
-            fee_payer = tx.get("feePayer") or csv_row.get("fee_payer") or ""
-            native_by_account: dict[str, float] = defaultdict(float)
-            token_by_user: dict[str, float] = defaultdict(float)
-
-            for account in tx.get("accountData") or []:
-                account_id = account.get("account")
-                if account_id:
-                    native_by_account[account_id] += float_or_zero(account.get("nativeBalanceChange")) / 1_000_000_000
-                for token_balance in account.get("tokenBalanceChanges") or []:
-                    if token_balance.get("mint") != mint:
-                        continue
-                    user = token_balance.get("userAccount") or account_id
-                    raw = token_balance.get("rawTokenAmount") or {}
-                    decimals = int_or_none(raw.get("decimals")) or 0
-                    amount = float_or_zero(raw.get("tokenAmount")) / (10**decimals)
-                    if user:
-                        token_by_user[user] += amount
-
-            fee_token_delta = token_by_user[fee_payer]
-            fee_native_delta = native_by_account[fee_payer]
-            side = infer_side(fee_token_delta, fee_native_delta)
-            sol_amount = abs(fee_native_delta)
-            token_amount = abs(fee_token_delta)
-            price = sol_amount / token_amount if sol_amount and token_amount else None
-
-            txs.append(
-                {
-                    "sig": sig,
-                    "ts": int_or_none(tx.get("timestamp")),
-                    "slot": int_or_none(tx.get("slot")),
-                    "type": tx.get("type") or csv_row.get("type") or "",
-                    "source": tx.get("source") or csv_row.get("source") or "",
-                    "fee_payer": fee_payer,
-                    "side": side,
-                    "sol": sol_amount,
-                    "token": token_amount,
-                    "price": price,
-                }
-            )
+            txs.append(normalize_raw_market_tx(tx, mint, csv_by_sig.get(sig, {})))
     return sorted(txs, key=lambda item: (item["ts"] or 0, item["slot"] or 0, item["sig"]))
+
+
+def normalize_raw_market_tx(
+    tx: dict[str, Any], mint: str, csv_row: dict[str, str] | None = None
+) -> dict[str, Any]:
+    csv_row = csv_row or {}
+    sig = tx.get("signature") or ""
+    fee_payer = tx.get("feePayer") or csv_row.get("fee_payer") or ""
+    native_by_account: dict[str, float] = defaultdict(float)
+    token_by_user: dict[str, float] = defaultdict(float)
+
+    for account in tx.get("accountData") or []:
+        account_id = account.get("account")
+        if account_id:
+            native_by_account[account_id] += float_or_zero(account.get("nativeBalanceChange")) / 1_000_000_000
+        for token_balance in account.get("tokenBalanceChanges") or []:
+            if token_balance.get("mint") != mint:
+                continue
+            user = token_balance.get("userAccount") or account_id
+            raw = token_balance.get("rawTokenAmount") or {}
+            decimals = int_or_none(raw.get("decimals")) or 0
+            amount = float_or_zero(raw.get("tokenAmount")) / (10**decimals)
+            if user:
+                token_by_user[user] += amount
+
+    fee_token_delta = token_by_user[fee_payer]
+    fee_native_delta = native_by_account[fee_payer]
+    side = infer_side(fee_token_delta, fee_native_delta)
+    sol_amount = abs(fee_native_delta)
+    token_amount = abs(fee_token_delta)
+    price = sol_amount / token_amount if sol_amount and token_amount else None
+
+    return {
+        "sig": sig,
+        "ts": int_or_none(tx.get("timestamp")),
+        "slot": int_or_none(tx.get("slot")),
+        "type": tx.get("type") or csv_row.get("type") or "",
+        "source": tx.get("source") or csv_row.get("source") or "",
+        "fee_payer": fee_payer,
+        "side": side,
+        "sol": sol_amount,
+        "token": token_amount,
+        "price": price,
+    }
 
 
 def calculate_entry_features(

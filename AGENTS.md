@@ -128,7 +128,7 @@ python -m pump_monitor.monitor --wallet <ADDR> --once --limit 5
 python -m pump_analyst.analyze --wallet <ADDR>
 
 # Web UI (browser-based)
-python webui.py                        # Opens at http://0.0.0.0:7860
+python webui.py                        # Opens at http://0.0.0.0:7862
 ```
 
 ## NOTES
