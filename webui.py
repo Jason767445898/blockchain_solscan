@@ -41,11 +41,11 @@ def _capture_output(fn, **kwargs) -> str:
             fn(**kwargs)
         except SystemExit as e:
             if e.code and e.code != 0:
-                print(f"[ERROR] Process exited with code {e.code}")
+                print(f"[错误] 进程退出，代码 {e.code}")
         except Exception as e:
-            print(f"[ERROR] {e}")
+            print(f"[错误] {e}")
     output = buf.getvalue()
-    return output if output.strip() else "(no output)"
+    return output if output.strip() else "（无输出）"
 
 
 # --- Individual Command Handlers ---
@@ -136,25 +136,25 @@ def do_pipeline(
     results: list[str] = []
 
     if not skip_scan:
-        progress(0.15, desc="Step 1/5: Scanning wallet transactions...")
+        progress(0.15, desc="步骤 1/5：正在扫描钱包交易...")
         results.append(f"=== SCAN ===\n{do_scan(wallet, rpc_url, data_dir, limit, refresh_seen, verbose)}")
 
-    progress(0.30, desc="Step 2/5: Deduplicating...")
+    progress(0.30, desc="步骤 2/5：正在去重...")
     results.append(f"=== DEDUPE ===\n{do_dedupe(wallet, data_dir)}")
 
-    progress(0.45, desc="Step 3/5: Summarizing meme tokens...")
+    progress(0.45, desc="步骤 3/5：正在汇总 Meme 代币...")
     results.append(f"=== TOKENS ===\n{do_tokens(wallet, data_dir)}")
 
     if not skip_market and helius_api_key:
-        progress(0.65, desc="Step 4/5: Fetching market trades (this may take a while)...")
+        progress(0.65, desc="步骤 4/5：正在获取市场交易（可能需要一段时间）...")
         results.append(f"=== MARKET ===\n{do_market(wallet, data_dir, helius_api_key)}")
     elif not skip_market:
-        results.append("=== MARKET ===\n(skipped — no Helius API key provided)")
+        results.append("=== MARKET ===\n（已跳过 — 未提供 Helius API 密钥）")
 
-    progress(0.85, desc="Step 5/5: Generating analysis reports...")
+    progress(0.85, desc="步骤 5/5：正在生成分析报告...")
     results.append(f"=== ANALYZE ===\n{do_analyze(wallet, data_dir, min_effective_sol)}")
 
-    progress(1.0, desc="Pipeline complete!")
+    progress(1.0, desc="流水线完成！")
     return "\n\n".join(results)
 
 
@@ -193,15 +193,15 @@ def _build_screener(
         min_effective_sol=float(min_effective_sol),
     )
     config = ScreenerConfig(
-        helius_api_key=helius_api_key.strip(),
+        helius_api_key=(helius_api_key or "").strip(),
         data_dir=data_dir,
         discovery_limit=int(discovery_limit),
         market_limit=int(market_limit),
         max_candidates=int(max_candidates),
         candidate_max_age_s=max(int(max_age_s) + 60, 240),
         rule=rule,
-        telegram_bot_token=telegram_bot_token.strip(),
-        telegram_chat_id=telegram_chat_id.strip(),
+        telegram_bot_token=(telegram_bot_token or "").strip(),
+        telegram_chat_id=(telegram_chat_id or "").strip(),
     )
     return RealtimeScreener(config)
 
@@ -225,7 +225,7 @@ def _screener_settings_key(
     telegram_chat_id: str,
 ) -> tuple[Any, ...]:
     return (
-        helius_api_key.strip(),
+        (helius_api_key or "").strip(),
         data_dir,
         float(min_effective_sol),
         int(max_age_s),
@@ -239,8 +239,8 @@ def _screener_settings_key(
         int(discovery_limit),
         int(market_limit),
         int(max_candidates),
-        bool(telegram_bot_token.strip()),
-        telegram_chat_id.strip(),
+        bool((telegram_bot_token or "").strip()),
+        (telegram_chat_id or "").strip(),
     )
 
 
@@ -265,8 +265,8 @@ def run_screener_once(
 ) -> tuple[list[list[Any]], list[list[Any]], str, Any]:
     from pump_monitor.screener import load_alert_rows, rows_for_table, summarize_poll
 
-    if not helius_api_key.strip():
-        return [], rows_for_table(load_alert_rows(data_dir)), "Helius API key is required.", screener_state
+    if not (helius_api_key or "").strip():
+        return [], rows_for_table(load_alert_rows(data_dir)), "需要 Helius API 密钥。", screener_state
 
     settings_key = _screener_settings_key(
         helius_api_key,
@@ -310,7 +310,7 @@ def run_screener_once(
     try:
         result = screener_state.poll_once()
     except Exception as exc:
-        return [], rows_for_table(load_alert_rows(data_dir)), f"[ERROR] {exc}", screener_state
+        return [], rows_for_table(load_alert_rows(data_dir)), f"[错误] {exc}", screener_state
 
     return (
         rows_for_table(result["rows"]),
@@ -346,7 +346,7 @@ def run_screener_loop(
     latest_alerts: list[list[Any]] = []
     latest_status = ""
     for index in range(max(1, int(cycles))):
-        progress((index + 1) / max(1, int(cycles)), desc=f"Polling {index + 1}/{int(cycles)}")
+        progress((index + 1) / max(1, int(cycles)), desc=f"轮询 {index + 1}/{int(cycles)}")
         latest_candidates, latest_alerts, latest_status, screener_state = run_screener_once(
             helius_api_key,
             data_dir,
@@ -374,7 +374,7 @@ def run_screener_loop(
 def reset_screener_state(data_dir: str) -> tuple[list[list[Any]], list[list[Any]], str, None]:
     from pump_monitor.screener import load_alert_rows, rows_for_table
 
-    return [], rows_for_table(load_alert_rows(data_dir)), "Realtime screener state reset.", None
+    return [], rows_for_table(load_alert_rows(data_dir)), "实时筛选器状态已重置。", None
 
 
 # --- Results Tab Helpers ---
@@ -411,16 +411,16 @@ def _list_output_files(wallet: str, data_dir: str) -> list[str]:
 def _read_file_content(file_path: str | None) -> tuple[list[list[str]], str, str]:
     """Read a file and return (csv_rows, markdown_text, raw_text)."""
     if not file_path:
-        return [], "*No file selected.*", ""
+        return [], "*未选择文件。*", ""
 
     path = Path(file_path)
     if not path.exists():
-        return [], f"*File not found: `{file_path}`*", ""
+        return [], f"*文件未找到：`{file_path}`*", ""
 
     try:
         text = path.read_text(encoding="utf-8")
     except Exception as e:
-        return [], f"*Error reading file: {e}*", ""
+        return [], f"*读取文件出错：{e}*", ""
 
     suffix = path.suffix.lower()
 
@@ -453,55 +453,57 @@ def update_file_view(file_path: str | None) -> tuple[list[list[str]], str, str]:
 # --- UI Construction ---
 
 
-def build_ui() -> gr.Blocks:
-    css = """
-    .output-log textarea {
-        font-family: 'Menlo', 'Consolas', 'SF Mono', monospace;
-        font-size: 12px;
-        line-height: 1.4;
-    }
-    footer { display: none !important; }
-    """
-    theme = gr.themes.Soft(
-        primary_hue="blue",
-        secondary_hue="slate",
-    )
+_UI_CSS = """
+.output-log textarea {
+    font-family: 'Menlo', 'Consolas', 'SF Mono', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+}
+footer { display: none !important; }
+"""
+_UI_THEME = gr.themes.Soft(
+    primary_hue="blue",
+    secondary_hue="slate",
+)
 
-    with gr.Blocks(title="Pump Wallet Tool", theme=theme, css=css) as demo:
+
+def build_ui() -> gr.Blocks:
+    with gr.Blocks(title="Pump 钱包工具") as demo:
         # --- Header ---
         gr.Markdown(
-            """# 🚀 Pump Wallet Tool
+            """# 🚀 Pump 钱包工具
 
-            Monitor Solana wallets for **Pump.fun / PumpSwap** meme-coin activity.
-            Scan transactions → fetch market trades → generate entry/exit behavior analysis reports.
+            监控 Solana 钱包的 **Pump.fun / PumpSwap** Meme 代币活动。
+            扫描交易 → 获取市场交易 → 生成开仓/平仓行为分析报告。
             """
         )
 
         # --- Settings Panel ---
-        with gr.Accordion("⚙️ Settings", open=True):
+        with gr.Accordion("⚙️ 设置", open=True):
             with gr.Row():
                 wallet_input = gr.Textbox(
-                    label="Wallet Address",
+                    label="钱包地址",
                     value=DEFAULT_WALLET,
-                    placeholder="Solana wallet address (base58)",
+                    placeholder="Solana 钱包地址（base58）",
                     scale=3,
                 )
                 data_dir_input = gr.Textbox(
-                    label="Data Directory",
+                    label="数据目录",
                     value=DEFAULT_DATA_DIR,
                     scale=1,
                 )
             with gr.Row():
                 rpc_input = gr.Textbox(
-                    label="RPC URL",
+                    label="RPC 地址",
                     value=DEFAULT_RPC,
                     placeholder="https://api.mainnet-beta.solana.com",
                     scale=2,
                 )
                 helius_key_input = gr.Textbox(
-                    label="Helius API Key",
+                    label="Helius API 密钥",
                     type="password",
-                    placeholder="Required for market trade fetching",
+                    placeholder="获取市场交易时需要",
+                    value="",
                     scale=1,
                 )
 
@@ -510,122 +512,124 @@ def build_ui() -> gr.Blocks:
             # ============================
             # Realtime Screener Tab
             # ============================
-            with gr.TabItem("Realtime Screener"):
-                gr.Markdown("Visual realtime screening for fresh Pump mints using the entry profile from reports.")
+            with gr.TabItem("实时筛选器"):
+                gr.Markdown("使用报告中的入场画像对新 Pump 代币进行可视化实时筛选。")
                 screener_state = gr.State(value=None)
 
                 with gr.Row():
                     with gr.Column(scale=1):
                         with gr.Group():
                             min_effective_sol_rt = gr.Number(
-                                label="Min Effective SOL",
+                                label="最小有效 SOL",
                                 value=0.005,
                                 minimum=0.0,
                                 step=0.001,
                             )
-                            max_age_rt = gr.Number(label="Max Age Seconds", value=180, minimum=1, precision=0)
-                            min_trades_rt = gr.Number(label="Min Trades", value=15, minimum=0, precision=0)
-                            min_buyers_rt = gr.Number(label="Min Unique Buyers", value=10, minimum=0, precision=0)
-                            min_buy_sol_rt = gr.Number(label="Min Buy SOL", value=5.0, minimum=0.0, step=0.1)
+                            max_age_rt = gr.Number(label="最大存活秒数", value=180, minimum=1, precision=0)
+                            min_trades_rt = gr.Number(label="最小交易数", value=15, minimum=0, precision=0)
+                            min_buyers_rt = gr.Number(label="最小独立买家数", value=10, minimum=0, precision=0)
+                            min_buy_sol_rt = gr.Number(label="最小买入 SOL", value=5.0, minimum=0.0, step=0.1)
                             min_last60_trades_rt = gr.Number(
-                                label="Min Last 60s Trades",
+                                label="最近 60 秒最小交易数",
                                 value=5,
                                 minimum=0,
                                 precision=0,
                             )
                             min_last60_sol_rt = gr.Number(
-                                label="Min Last 60s SOL",
+                                label="最近 60 秒最小 SOL",
                                 value=2.0,
                                 minimum=0.0,
                                 step=0.1,
                             )
                             min_buy_ratio_rt = gr.Slider(
-                                label="Min Buy Ratio",
+                                label="最小买入比例",
                                 value=0.55,
                                 minimum=0.0,
                                 maximum=1.0,
                                 step=0.01,
                             )
-                            max_gap_rt = gr.Number(label="Max Last Trade Gap Seconds", value=10, minimum=0, precision=0)
+                            max_gap_rt = gr.Number(label="最后交易最大间隔秒数", value=10, minimum=0, precision=0)
                         with gr.Group():
                             discovery_limit_rt = gr.Number(
-                                label="Discovery Page Limit",
+                                label="发现页面限制",
                                 value=30,
                                 minimum=1,
                                 maximum=100,
                                 precision=0,
                             )
                             market_limit_rt = gr.Number(
-                                label="Market Page Limit",
+                                label="市场页面限制",
                                 value=100,
                                 minimum=1,
                                 maximum=100,
                                 precision=0,
                             )
                             max_candidates_rt = gr.Number(
-                                label="Max Candidates Shown",
+                                label="最多显示候选数",
                                 value=20,
                                 minimum=1,
                                 maximum=100,
                                 precision=0,
                             )
-                            poll_seconds_rt = gr.Number(label="Poll Seconds", value=8, minimum=1, precision=0)
-                            cycles_rt = gr.Number(label="Loop Cycles", value=5, minimum=1, maximum=100, precision=0)
-                        with gr.Accordion("Telegram Alerts", open=False):
+                            poll_seconds_rt = gr.Number(label="轮询间隔秒数", value=8, minimum=1, precision=0)
+                            cycles_rt = gr.Number(label="循环次数", value=5, minimum=1, maximum=100, precision=0)
+                        with gr.Accordion("Telegram 通知", open=False):
                             telegram_token_rt = gr.Textbox(
-                                label="Bot Token",
+                                label="机器人 Token",
                                 type="password",
-                                placeholder="Optional",
+                                placeholder="可选",
+                                value="",
                             )
                             telegram_chat_rt = gr.Textbox(
-                                label="Chat ID",
-                                placeholder="Optional",
+                                label="聊天 ID",
+                                placeholder="可选",
+                                value="",
                             )
                         with gr.Row():
-                            run_screener_once_btn = gr.Button("Poll Once", variant="primary")
-                            run_screener_loop_btn = gr.Button("Run Loop")
-                            reset_screener_btn = gr.Button("Reset")
+                            run_screener_once_btn = gr.Button("单次轮询", variant="primary")
+                            run_screener_loop_btn = gr.Button("循环运行")
+                            reset_screener_btn = gr.Button("重置")
 
                     with gr.Column(scale=3):
                         screener_status = gr.Textbox(
-                            label="Status",
+                            label="状态",
                             lines=6,
                             max_lines=12,
                             elem_classes="output-log",
                         )
                         candidate_table = gr.Dataframe(
-                            label="Live Candidates",
+                            label="实时候选",
                             headers=[
-                                "match",
-                                "score",
-                                "mint",
-                                "age_s",
-                                "trades",
-                                "buyers",
-                                "buy_sol",
-                                "last60_trades",
-                                "last60_sol",
-                                "buy_ratio",
-                                "gap_s",
+                                "匹配",
+                                "分数",
+                                "代币",
+                                "存活秒数",
+                                "交易数",
+                                "买家数",
+                                "买入 SOL",
+                                "近60秒交易",
+                                "近60秒SOL",
+                                "买入比例",
+                                "间隔秒数",
                             ],
                             datatype=SCREENER_TABLE_TYPES,
                             row_count=(12, "dynamic"),
                             wrap=True,
                         )
                         alert_table = gr.Dataframe(
-                            label="Matched Alerts",
+                            label="命中提醒",
                             headers=[
-                                "match",
-                                "score",
-                                "mint",
-                                "age_s",
-                                "trades",
-                                "buyers",
-                                "buy_sol",
-                                "last60_trades",
-                                "last60_sol",
-                                "buy_ratio",
-                                "gap_s",
+                                "匹配",
+                                "分数",
+                                "代币",
+                                "存活秒数",
+                                "交易数",
+                                "买家数",
+                                "买入 SOL",
+                                "近60秒交易",
+                                "近60秒SOL",
+                                "买入比例",
+                                "间隔秒数",
                             ],
                             datatype=SCREENER_TABLE_TYPES,
                             row_count=(8, "dynamic"),
@@ -669,38 +673,38 @@ def build_ui() -> gr.Blocks:
             # ============================
             # Pipeline Tab
             # ============================
-            with gr.TabItem("🚀 Pipeline"):
-                gr.Markdown("Run the complete pipeline: **scan → dedupe → tokens → market → analyze**.")
+            with gr.TabItem("🚀 流水线"):
+                gr.Markdown("运行完整流水线：**扫描 → 去重 → 代币汇总 → 市场交易 → 分析报告**。")
                 with gr.Row():
                     with gr.Column(scale=1):
                         with gr.Group():
                             limit_pl = gr.Number(
-                                label="Transaction Limit",
+                                label="交易数量限制",
                                 value=100,
                                 minimum=1,
                                 maximum=1000,
                                 precision=0,
                             )
-                            refresh_pl = gr.Checkbox(label="Refresh Seen Signatures", value=False)
-                            verbose_pl = gr.Checkbox(label="Verbose Output", value=True)
+                            refresh_pl = gr.Checkbox(label="刷新已见签名", value=False)
+                            verbose_pl = gr.Checkbox(label="详细输出", value=True)
                             skip_scan_pl = gr.Checkbox(
-                                label="Skip Scan (use existing local data)",
+                                label="跳过扫描（使用已有本地数据）",
                                 value=False,
                             )
                             skip_market_pl = gr.Checkbox(
-                                label="Skip Market (use existing market data)",
+                                label="跳过市场（使用已有市场数据）",
                                 value=False,
                             )
                             min_sol_pl = gr.Number(
-                                label="Min Effective SOL",
+                                label="最小有效 SOL",
                                 value=0.005,
                                 minimum=0.0,
                                 step=0.001,
                             )
-                        run_pipeline_btn = gr.Button("▶ Run Pipeline", variant="primary", size="lg")
+                        run_pipeline_btn = gr.Button("▶ 运行流水线", variant="primary", size="lg")
                     with gr.Column(scale=2):
                         pipeline_output = gr.Textbox(
-                            label="Pipeline Log",
+                            label="流水线日志",
                             lines=22,
                             max_lines=50,
                             elem_classes="output-log",
@@ -727,24 +731,24 @@ def build_ui() -> gr.Blocks:
             # ============================
             # Scan Tab
             # ============================
-            with gr.TabItem("🔍 Scan"):
-                gr.Markdown("Fetch wallet transactions and classify Pump.fun / PumpSwap activity.")
+            with gr.TabItem("🔍 扫描"):
+                gr.Markdown("获取钱包交易并分类 Pump.fun / PumpSwap 活动。")
                 with gr.Row():
                     with gr.Column(scale=1):
                         with gr.Group():
                             limit_sc = gr.Number(
-                                label="Transaction Limit",
+                                label="交易数量限制",
                                 value=100,
                                 minimum=1,
                                 maximum=1000,
                                 precision=0,
                             )
-                            refresh_sc = gr.Checkbox(label="Refresh Seen Signatures", value=False)
-                            verbose_sc = gr.Checkbox(label="Verbose Output", value=True)
-                        run_scan_btn = gr.Button("▶ Run Scan", variant="primary")
+                            refresh_sc = gr.Checkbox(label="刷新已见签名", value=False)
+                            verbose_sc = gr.Checkbox(label="详细输出", value=True)
+                        run_scan_btn = gr.Button("▶ 运行扫描", variant="primary")
                     with gr.Column(scale=2):
                         scan_output = gr.Textbox(
-                            label="Scan Log",
+                            label="扫描日志",
                             lines=18,
                             max_lines=40,
                             elem_classes="output-log",
@@ -760,22 +764,22 @@ def build_ui() -> gr.Blocks:
             # ============================
             # Market Tab
             # ============================
-            with gr.TabItem("📊 Market Trades"):
+            with gr.TabItem("📊 市场交易"):
                 gr.Markdown(
-                    "Fetch market-wide Helius enhanced transactions for each meme token mint. "
-                    "Requires a valid Helius API key in Settings."
+                    "获取每个 Meme 代币的全市场 Helius 增强交易数据。"
+                    "需要在设置中提供有效的 Helius API 密钥。"
                 )
                 with gr.Row():
                     with gr.Column(scale=1):
                         gr.Markdown(
-                            """**Note:** This step reads `data/<wallet>.meme_tokens.csv`
-                            and fetches all market trades within each mint's trading window.
-                            May take several minutes depending on token count."""
+                            """**注意：** 此步骤读取 `data/<钱包>.meme_tokens.csv`，
+                            并获取每个代币在交易窗口内的所有市场交易。
+                            根据代币数量，可能需要几分钟。"""
                         )
-                        run_market_btn = gr.Button("▶ Fetch Market Trades", variant="primary")
+                        run_market_btn = gr.Button("▶ 获取市场交易", variant="primary")
                     with gr.Column(scale=2):
                         market_output = gr.Textbox(
-                            label="Market Log",
+                            label="市场日志",
                             lines=18,
                             max_lines=40,
                             elem_classes="output-log",
@@ -791,20 +795,20 @@ def build_ui() -> gr.Blocks:
             # ============================
             # Inspect Tab
             # ============================
-            with gr.TabItem("🔎 Inspect"):
-                gr.Markdown("Inspect a single transaction and see its Pump classification details.")
+            with gr.TabItem("🔎 检查"):
+                gr.Markdown("检查单笔交易并查看其 Pump 分类详情。")
                 with gr.Row():
                     with gr.Column(scale=1):
                         sig_input = gr.Textbox(
-                            label="Transaction Signature",
-                            placeholder="Enter a Solana transaction signature (base58)...",
+                            label="交易签名",
+                            placeholder="输入 Solana 交易签名（base58）...",
                             lines=2,
                         )
-                        verbose_insp = gr.Checkbox(label="Verbose Output", value=True)
-                        run_inspect_btn = gr.Button("▶ Inspect", variant="primary")
+                        verbose_insp = gr.Checkbox(label="详细输出", value=True)
+                        run_inspect_btn = gr.Button("▶ 检查", variant="primary")
                     with gr.Column(scale=2):
                         inspect_output = gr.Textbox(
-                            label="Inspection Result",
+                            label="检查结果",
                             lines=16,
                             max_lines=30,
                             elem_classes="output-log",
@@ -819,22 +823,22 @@ def build_ui() -> gr.Blocks:
             # ============================
             # Analyze Tab
             # ============================
-            with gr.TabItem("📈 Analyze"):
-                gr.Markdown("Generate entry and exit behavior analysis reports from collected data.")
+            with gr.TabItem("📈 分析"):
+                gr.Markdown("根据收集的数据生成开仓和平仓行为分析报告。")
                 with gr.Row():
                     with gr.Column(scale=1):
                         with gr.Group():
                             min_sol_an = gr.Number(
-                                label="Min Effective SOL",
+                                label="最小有效 SOL",
                                 value=0.005,
                                 minimum=0.0,
                                 step=0.001,
-                                info="Ignore trades below this SOL amount in feature computation.",
+                                info="计算特征时忽略低于此 SOL 金额的交易。",
                             )
-                        run_analyze_btn = gr.Button("▶ Generate Analysis", variant="primary")
+                        run_analyze_btn = gr.Button("▶ 生成分析", variant="primary")
                     with gr.Column(scale=2):
                         analyze_output = gr.Textbox(
-                            label="Analysis Log",
+                            label="分析日志",
                             lines=12,
                             max_lines=30,
                             elem_classes="output-log",
@@ -850,12 +854,12 @@ def build_ui() -> gr.Blocks:
             # ============================
             # Results Tab
             # ============================
-            with gr.TabItem("📁 Results"):
-                gr.Markdown("Browse and view generated output files (CSV, JSONL, Markdown reports).")
+            with gr.TabItem("📁 结果"):
+                gr.Markdown("浏览和查看生成的输出文件（CSV、JSONL、Markdown 报告）。")
                 with gr.Row():
-                    refresh_btn = gr.Button("🔄 Refresh File List", scale=1)
+                    refresh_btn = gr.Button("🔄 刷新文件列表", scale=1)
                     file_dropdown = gr.Dropdown(
-                        label="Available Output Files",
+                        label="可用输出文件",
                         choices=[],
                         interactive=True,
                         allow_custom_value=True,
@@ -869,17 +873,17 @@ def build_ui() -> gr.Blocks:
                 )
 
                 with gr.Tabs():
-                    with gr.TabItem("📋 Table View"):
+                    with gr.TabItem("📋 表格视图"):
                         csv_table = gr.Dataframe(
-                            label="CSV Content",
+                            label="CSV 内容",
                             row_count=(30, "dynamic"),
                             wrap=True,
                         )
-                    with gr.TabItem("📝 Report View"):
-                        md_view = gr.Markdown("*Select a `.md` report file from the dropdown above.*")
-                    with gr.TabItem("📄 Raw Text"):
+                    with gr.TabItem("📝 报告视图"):
+                        md_view = gr.Markdown("*从上方下拉菜单中选择 `.md` 报告文件。*")
+                    with gr.TabItem("📄 原始文本"):
                         raw_view = gr.Textbox(
-                            label="Raw File Content",
+                            label="原始文件内容",
                             lines=20,
                             max_lines=60,
                             elem_classes="output-log",
@@ -894,7 +898,7 @@ def build_ui() -> gr.Blocks:
         # --- Footer ---
         gr.Markdown(
             """---
-            *Pump Wallet Tool — Monitor | Analyze | Trade Smart*
+            *Pump 钱包工具 — 监控 | 分析 | 聪明交易*
             """
         )
 
@@ -910,4 +914,6 @@ if __name__ == "__main__":
         server_name="0.0.0.0",
         server_port=DEFAULT_WEBUI_PORT,
         share=False,
+        theme=_UI_THEME,
+        css=_UI_CSS,
     )
