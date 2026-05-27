@@ -14,25 +14,34 @@
 
 ```text
 pump_tool.py                         统一 CLI 入口
-webui.py                             Gradio Web UI 入口（浏览器操作）
-pyproject.toml                       项目元数据和 ruff 配置
+webui.py                             Gradio Web UI 精简入口（委托给 pump_web/）
+pump_web/                            Gradio Web UI 包（UI、处理函数、筛选器、结果）
+  __init__.py                        重新导出 build_ui
+  ui.py                              build_ui()、CSS、主题、常量
+  handlers.py                        do_scan、do_market、do_inspect、do_analyze、do_pipeline
+  screener.py                        筛选器 UI 函数（构建、运行、重置、刷新、警报）
+  results.py                         文件列表和内容查看（结果标签页）
+pyproject.toml                       项目元数据、依赖项和 ruff 配置
 pump_monitor/                        数据采集、分类、落盘
   _base_client.py                    限频与重试基类
-  _utils.py                          共享工具函数
+  _utils.py                          共享工具函数（int_or_none、str_or_none 等）
+  _cli_bridges.py                    cli_scan()、cli_dedupe()、cli_tokens()、cli_market()、cli_inspect()
+  monitor.py                         编排逻辑（扫描、检查、市场获取、CLI argparser）
   rpc.py                             Solana JSON-RPC 客户端
   solscan.py                         Solscan Pro 客户端
   classifier.py                      Pump 交易分类逻辑
   meme_tokens.py                     钱包交易过的 meme token 汇总
   market_trades.py                   Helius 市场交易窗口抓取与标准化
-  storage.py                         JSONL/CSV 存储层
-  monitor.py                         原始底层 CLI 和流程编排
+  storage.py                         TransactionStore — 分层 JSONL/CSV 路径（data/<wallet>/）
+  models.py                          dataclass 模型
 pump_analyst/                        行为画像和报告生成
   analyze.py                         可导入、可 `python -m` 的分析入口
   cli.py                             分析子命令 CLI 入口
   _conditions.py                     核心特征计算
   _reports.py                        报告生成
-data/                                默认数据输出目录
-pump_analyst/results/                默认分析报告输出目录
+  README.md                          分析方法论与使用文档
+data/                                默认数据输出目录（分层结构：data/<wallet>/transactions.jsonl 等）
+docs/                                PROJECT_FLOW.md（架构与数据流）
 ```
 
 ## 数据流
@@ -41,13 +50,13 @@ pump_analyst/results/                默认分析报告输出目录
 flowchart LR
     A["目标钱包地址"] --> B["scan: 拉取交易"]
     B --> C["classifier: 分类 Pump 交易"]
-    C --> D["data/<wallet>.jsonl / .csv"]
+    C --> D["data/<wallet>/transactions.jsonl / .csv"]
     D --> E["tokens: 汇总 meme token"]
-    E --> F["data/<wallet>.meme_tokens.csv"]
+    E --> F["data/<wallet>/meme_tokens.csv"]
     F --> G["market: 拉取市场交易窗口"]
-    G --> H["data/<wallet>.market_trades/"]
+    G --> H["data/<wallet>/market_trades/"]
     H --> I["analyze: 计算开仓/清仓特征"]
-    I --> J["pump_analyst/results/<wallet>/"]
+    I --> J["data/<wallet>/analysis/"]
 ```
 
 ## 推荐使用方式
@@ -129,19 +138,19 @@ pump-tool --help
 
 ## 输出解释
 
-`data/<wallet>.csv` 是钱包交易摘要，适合人工快速筛选。
+`data/<wallet>/transactions.csv` 是钱包交易摘要，适合人工快速筛选。
 
-`data/<wallet>.jsonl` 保留完整结构化记录，适合后续重新计算或补字段。
+`data/<wallet>/transactions.jsonl` 保留完整结构化记录，适合后续重新计算或补字段。
 
-`data/<wallet>.meme_tokens.csv` 是以 mint 为单位的钱包持仓/买卖汇总。
+`data/<wallet>/meme_tokens.csv` 是以 mint 为单位的钱包持仓/买卖汇总。
 
-`data/<wallet>.market_trades/` 保存每个 mint 的市场窗口原始交易和标准化 CSV。
+`data/<wallet>/market_trades/` 保存每个 mint 的市场窗口原始交易和标准化 CSV。
 
-`pump_analyst/results/<wallet>/entry_features.csv` 保存每个 mint 开仓前特征。
+`data/<wallet>/analysis/entry_features.csv` 保存每个 mint 开仓前特征。
 
-`pump_analyst/results/<wallet>/exit_features.csv` 保存每个发生过卖出的 mint 清仓前特征。
+`data/<wallet>/analysis/exit_features.csv` 保存每个发生过卖出的 mint 清仓前特征。
 
-`pump_analyst/results/<wallet>/report.md` 和 `exit_report.md` 是中文画像报告。
+`data/<wallet>/analysis/report.md` 和 `exit_report.md` 是中文画像报告。
 
 ## 判断口径
 

@@ -25,11 +25,11 @@ python webui.py                      # 浏览器打开 http://0.0.0.0:7862
 - 识别 Pump.fun 和 PumpSwap 相关 program id
 - 初步分类：`pump_buy`、`pump_sell`、`pump_create_token`、`pump_related`、失败交易、其他交易
 - 输出：
-  - `data/<wallet>.jsonl`：完整结构化记录，保留原始交易数据
-  - `data/<wallet>.csv`：便于表格查看的摘要
-  - `data/<wallet>.meme_tokens.csv`：目标钱包交易过的 meme token 汇总
-  - `data/<wallet>.market_trades/`：每个 token 的市场交易窗口
-  - `pump_analyst/results/<wallet>/`：开仓/清仓画像、CSV 特征和 Markdown 报告
+  - `data/<wallet>/transactions.jsonl`：完整结构化记录，保留原始交易数据
+  - `data/<wallet>/transactions.csv`：便于表格查看的摘要
+  - `data/<wallet>/meme_tokens.csv`：目标钱包交易过的 meme token 汇总
+  - `data/<wallet>/market_trades/`：每个 token 的市场交易窗口
+  - `data/<wallet>/analysis/`：开仓/清仓画像、CSV 特征和 Markdown 报告
 - **Web UI**：Gradio 浏览器界面，7 个标签页覆盖所有功能：
   - Realtime Screener — 按报告画像实时筛选新 Pump mint，可选 Telegram 命中通知
   - 🚀 Pipeline — 一键运行完整流程，含进度条
@@ -152,10 +152,10 @@ python pump_tool.py \
   tokens
 ```
 
-该命令会读取本地 `data/<wallet>.jsonl`，按 token mint 汇总成功的 `pump_buy` / `pump_sell` 记录，输出买入次数、卖出次数、投入 SOL、回收 SOL、净 SOL、净 token 和首次/最后交易时间。加上 `--meme-tokens-csv` 会额外生成：
+该命令会读取本地 `data/<wallet>/transactions.jsonl`，按 token mint 汇总成功的 `pump_buy` / `pump_sell` 记录，输出买入次数、卖出次数、投入 SOL、回收 SOL、净 SOL、净 token 和首次/最后交易时间。加上 `--meme-tokens-csv` 会额外生成：
 
 ```text
-data/<wallet>.meme_tokens.csv
+data/<wallet>/meme_tokens.csv
 ```
 
 如果数据里没有 token 名称或 ticker，结果会以 mint 地址为准；Pump.fun 新币通常能看到以 `pump` 结尾的 mint。
@@ -165,7 +165,7 @@ data/<wallet>.meme_tokens.csv
 这个命令会读取：
 
 ```text
-data/<wallet>.meme_tokens.csv
+data/<wallet>/meme_tokens.csv
 ```
 
 对每个 mint 取 `first_block_time - 5分钟` 到 `last_block_time + 5分钟`，再调用 Helius Enhanced Transactions 按 mint 地址抓取窗口内交易，并二次过滤出确实包含该 mint 的记录。
@@ -193,10 +193,10 @@ python pump_tool.py \
 输出目录：
 
 ```text
-data/<wallet>.market_trades/<mint>.jsonl
-data/<wallet>.market_trades/<mint>.csv
-data/<wallet>.market_trades/all_market_trades.csv
-data/<wallet>.market_trades/summary.csv
+data/<wallet>/market_trades/<mint>.jsonl
+data/<wallet>/market_trades/<mint>.csv
+data/<wallet>/market_trades/all_market_trades.csv
+data/<wallet>/market_trades/summary.csv
 ```
 
 `summary.csv` 会列出每个 mint 的窗口、是否看起来已清仓、抓到多少条交易。注意：这里抓的是 Helius 地址交易历史里能通过 mint 地址捕获到的市场交易；如果币迁移到 PumpSwap / Raydium 等池子，后续可以把 bonding curve / pool 地址也纳入查询来提高覆盖率。
@@ -204,10 +204,10 @@ data/<wallet>.market_trades/summary.csv
 10. 查看结果：
 
 ```text
-data/55PB376nxsrBLTZr1UdQSk6M89AxPif6oKmbmZmWq5dr.csv
-data/55PB376nxsrBLTZr1UdQSk6M89AxPif6oKmbmZmWq5dr.jsonl
-data/55PB376nxsrBLTZr1UdQSk6M89AxPif6oKmbmZmWq5dr.market_trades/
-pump_analyst/results/55PB376nxsrBLTZr1UdQSk6M89AxPif6oKmbmZmWq5dr/
+data/55PB376nxsrBLTZr1UdQSk6M89AxPif6oKmbmZmWq5dr/transactions.csv
+data/55PB376nxsrBLTZr1UdQSk6M89AxPif6oKmbmZmWq5dr/transactions.jsonl
+data/55PB376nxsrBLTZr1UdQSk6M89AxPif6oKmbmZmWq5dr/market_trades/
+data/55PB376nxsrBLTZr1UdQSk6M89AxPif6oKmbmZmWq5dr/analysis/
 ```
 
 ## 统一命令
@@ -420,7 +420,7 @@ python webui.py
 
 | 标签 | 对应命令 | 说明 |
 |------|---------|------|
-| Realtime Screener | — | 使用 Helius 按 Pump program 发现新 mint，计算报告里的入场画像指标，命中后记录到 `data/realtime_screener/alerts.jsonl`，可选发 Telegram。 |
+| Realtime Screener | — | 使用 Helius 按 Pump program 发现新 mint，计算报告里的入场画像指标，命中后记录到 `data/<wallet>/screener/alerts.jsonl`，可选发 Telegram。 |
 | 🚀 Pipeline | `pipeline` | 一键运行完整流程，顶部 Settings 面板填入钱包/RPC/Helius Key 后点击按钮即可。支持跳过已有数据的步骤。 |
 | 🔍 Scan | `scan` | 从 RPC 抓取钱包交易并分类。可设置抓取数量、是否刷新已见过的签名。 |
 | 📊 Market | `market` | 基于 `meme_tokens.csv` 拉取每个 mint 的市场交易窗口。**需要 Helius API Key。** |

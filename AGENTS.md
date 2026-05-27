@@ -11,30 +11,38 @@ Python 3.9+ CLI pipeline that monitors Solana wallets for Pump.fun/PumpSwap meme
 ```
 ./
 ├── pump_tool.py          # Unified CLI — all commands funnel through here
-├── webui.py              # Gradio web UI — browser-based interface to all pipeline features
-├── pyproject.toml         # Project metadata, deps, ruff config (line-length=120, py39)
-├── pump_monitor/          # Data collection: RPC, classification, storage
+├── webui.py              # Thin Gradio entry point (~16 lines) — delegates to pump_web/
+├── pump_web/             # Gradio Web UI package (split from monolithic webui.py)
+│   ├── __init__.py       #   Re-exports build_ui
+│   ├── ui.py             #   build_ui(), CSS, theme, constants
+│   ├── handlers.py       #   do_scan, do_market, do_inspect, do_analyze, do_pipeline
+│   ├── screener.py       #   Screener UI functions (build, run, reset, refresh, alerts)
+│   └── results.py        #   File listing, content viewing for Results tab
+├── pyproject.toml        # Project metadata, deps (requests, urllib3<2, gradio), ruff config
+├── pump_monitor/         # Data collection: RPC, classification, storage
 │   ├── _base_client.py   #   BaseApiClient — shared rate-limit, retry, timeout
-│   ├── _utils.py          #   int_or_none(), str_or_none(), float_or_none(), as_list()
-│   ├── monitor.py         #   Orchestration + cli_*() bridge functions
-│   ├── rpc.py             #   Solana JSON-RPC client (requests, BaseApiClient)
-│   ├── solscan.py         #   Solscan Pro API client (requests, BaseApiClient)
-│   ├── classifier.py      #   Pump.fun/PumpSwap TX classification
-│   ├── storage.py         #   JSONL (canonical) + CSV (human-readable) store
-│   ├── market_trades.py   #   Helius enhanced TX fetch + standardization
-│   ├── meme_tokens.py     #   Mint-level buy/sell aggregation
-│   └── models.py          #   PumpClassification, MonitoredTransaction dataclasses
-├── pump_analyst/          # Entry/exit behavior analysis + report generation
-│   ├── _conditions.py     #   Core entry/exit feature computation (612 loc)
-│   ├── _reports.py        #   Report writing: CSV, JSON, Markdown (151 loc)
-│   ├── cli.py             #   Argparse entry point for analyze subcommand
-│   ├── analyze.py         #   Thin wrapper around cli.main() for module invocation
-│   └── results/           #   Per-wallet analysis output
-├── data/                  # Default wallet output (JSONL, CSV, market_trades/)
-├── docs/                  # PROJECT_FLOW.md (architecture + data flow)
-├── setup.cfg              # Legacy package metadata (superseded by pyproject.toml)
-└── .gitignore             # Ignores data/, pump_analyst/results/, .ruff_cache/
+│   ├── _utils.py         #   int_or_none(), str_or_none(), float_or_none(), as_list()
+│   ├── _cli_bridges.py   #   cli_scan(), cli_dedupe(), cli_tokens(), cli_market(), cli_inspect()
+│   ├── monitor.py        #   Orchestration logic (scan, inspect, market fetch, CLI argparser)
+│   ├── rpc.py            #   Solana JSON-RPC client (requests, BaseApiClient)
+│   ├── solscan.py        #   Solscan Pro API client (requests, BaseApiClient)
+│   ├── classifier.py     #   Pump.fun/PumpSwap TX classification
+│   ├── storage.py        #   TransactionStore — hierarchical JSONL/CSV paths (data/<wallet>/)
+│   ├── market_trades.py  #   Helius enhanced TX fetch + standardization
+│   ├── meme_tokens.py    #   Mint-level buy/sell aggregation
+│   └── models.py         #   PumpClassification, MonitoredTransaction dataclasses
+├── pump_analyst/         # Entry/exit behavior analysis + report generation
+│   ├── _conditions.py    #   Core entry/exit feature computation
+│   ├── _reports.py       #   Report writing: CSV, JSON, Markdown
+│   ├── cli.py            #   Argparse entry point for analyze subcommand
+│   ├── analyze.py        #   Thin wrapper around cli.main() for module invocation
+│   └── README.md         #   Analyst usage and methodology documentation
+├── data/                 # Wallet output (hierarchical: data/<wallet>/transactions.jsonl, ...)
+├── docs/                 # PROJECT_FLOW.md (architecture + data flow)
+└── .gitignore            # Ignores data/, .ruff_cache/
 ```
+```
+Note: setup.cfg and setup.py have been removed — pyproject.toml is the single source of truth.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -48,8 +56,8 @@ Python 3.9+ CLI pipeline that monitors Solana wallets for Pump.fun/PumpSwap meme
 | Add Pump program IDs | `classifier.py` ⇒ `PUMP_FUN_PROGRAM_IDS` / `PUMP_SWAP_PROGRAM_IDS` | Or via `--pump-program-id` / `PUMP_PROGRAM_IDS` env var |
 | Diagnostic single TX | `pump_tool.py inspect <SIGNATURE>` | Prints program IDs, classification, SOL/token changes |
 | Pipeline orchestration | `pump_tool.py` ⇒ `run_pipeline()` | scan → dedupe → tokens → market → analyze |
-| Launch web UI | `webui.py` ⇒ `build_ui()` | Gradio Blocks app with 6 tabs covering all subcommands |
-| Change web UI layout | `webui.py` ⇒ `build_ui()` | Tab-based: Pipeline, Scan, Market, Inspect, Analyze, Results |
+| Launch web UI | `webui.py` ⇒ `pump_web/ui.py:build_ui()` | Gradio Blocks app with 7 tabs (Screener, Pipeline, Scan, Market, Inspect, Analyze, Results) |
+| Change web UI layout | `pump_web/ui.py` ⇒ `build_ui()` | Tab-based: Screener, Pipeline, Scan, Market, Inspect, Analyze, Results |
 
 ## CODE MAP
 | Symbol | Type | Location | Role |
@@ -68,9 +76,9 @@ Python 3.9+ CLI pipeline that monitors Solana wallets for Pump.fun/PumpSwap meme
 | `build_exit_samples()` | function | `pump_analyst/_conditions.py` | Exit feature computation from pre-sell market window |
 | `cli.main()` | function | `pump_analyst/cli.py:30` | Standalone argparser + analysis orchestration |
 | `analyze.main()` | function | `pump_analyst/analyze.py:9` | Module-invocation wrapper → delegates to `cli.main()` |
-| `monitor.cli_*()` | function group | `pump_monitor/monitor.py:149+` | Bridge functions: `cli_scan()`, `cli_dedupe()`, `cli_tokens()`, `cli_market()`, `cli_inspect()` |
-| `webui.build_ui()` | function | `webui.py` | Gradio Blocks UI construction — all tabs, settings panel, event wiring |
-| `webui.do_pipeline()` | function | `webui.py` | Pipeline wrapper with progress bar — orchestrates scan→dedupe→tokens→market→analyze |
+| `monitor.cli_*()` | function group | `pump_monitor/_cli_bridges.py` | Bridge functions: `cli_scan()`, `cli_dedupe()`, `cli_tokens()`, `cli_market()`, `cli_inspect()`; re-exported from `monitor.py` |
+| `webui.build_ui()` | function | `pump_web/ui.py` | Gradio Blocks UI construction — all 7 tabs, settings panel, event wiring |
+| `webui.do_pipeline()` | function | `pump_web/handlers.py` | Pipeline wrapper with progress bar — orchestrates scan→dedupe→tokens→market→analyze |
 
 ## CONVENTIONS
 - `from __future__ import annotations` in EVERY .py file — deferred evaluation, enables `|` union syntax
@@ -95,7 +103,7 @@ Python 3.9+ CLI pipeline that monitors Solana wallets for Pump.fun/PumpSwap meme
 - **DO NOT treat analysis results as profit signals** — no negative samples exist; the report is behavioral profiling, not backtested strategy.
 - **DO NOT write a 4th API client from scratch** — subclass `BaseApiClient` to get rate-limit, retry, and timeout for free.
 - **DO NOT add async/await without full conversion** — all HTTP is synchronous (`requests`). Mixing sync + async will deadlock on the rate-limiter.
-- **DO NOT modify `setup.cfg` for deps** — `pyproject.toml` is the authoritative dependency source now.
+- **DO NOT add `setup.cfg` or `setup.py` back** — `pyproject.toml` is the single, authoritative dependency and packaging source. These legacy files were removed during the v0.2.0 refactor.
 
 ## UNIQUE STYLES
 - **cli_*() bridge pattern**: `pump_monitor/monitor.py` exposes `cli_scan()`, `cli_dedupe()`, `cli_tokens()`, `cli_market()`, `cli_inspect()` as keyword-argument functions. `pump_tool.py` calls them directly without building argv or re-parsing — no dual argparse.
@@ -134,9 +142,9 @@ python webui.py                        # Opens at http://0.0.0.0:7862
 ## NOTES
 - No tests exist. No CI.
 - Ruff configured in `pyproject.toml` — `line-length=120`, `target-version="py39"`, lint rules `E,F,W,I,N,UP`, double quotes format.
-- `pyproject.toml` is the authoritative dependency source; `setup.cfg` is legacy.
+- `pyproject.toml` is the single authoritative dependency source; `setup.cfg` and `setup.py` were removed in v0.2.0 refactor.
 - Only 2 external deps (`requests`, `gradio`). Adding more needs justification in `pyproject.toml` and `requirements.txt`.
 - Single `DEFAULT_WALLET` in `pump_tool.py:7`: `DEFAULT_WALLET = "55PB376nxsrBLTZr1UdQSk6M89AxPif6oKmbmZmWq5dr"` (was previously duplicated in the deleted legacy analyzer).
-- `data/` and `pump_analyst/results/` are in `.gitignore`.
+- `data/` is in `.gitignore` (covers all wallet subdirectories including analysis output). `pump_analyst/results/` line removed — analysis now writes to `data/<wallet>/analysis/`.
 - Timestamp handling: all 3 API clients (`BaseApiClient` subclasses) now share identical rate-limiting via `_rate_limit()` + `_mark_request()`.
 - Analysis feature thresholds (`MIN_EFFECTIVE_SOL = 0.005`) live at the top of `pump_analyst/_conditions.py`.

@@ -5,10 +5,10 @@
 当前脚本会读取已有采集结果：
 
 ```text
-data/<wallet>.csv
-data/<wallet>.meme_tokens.csv
-data/<wallet>.market_trades/all_market_trades.csv
-data/<wallet>.market_trades/<mint>.jsonl
+data/<wallet>/transactions.csv
+data/<wallet>/meme_tokens.csv
+data/<wallet>/market_trades/all_market_trades.csv
+data/<wallet>/market_trades/<mint>.jsonl
 ```
 
 然后分两条线分析：
@@ -55,7 +55,7 @@ python -m pump_analyst.analyze \
 
 ```bash
 python -m pump_analyst.analyze \
-  --output-dir pump_analyst/results/my_run
+  --output-dir custom/path/my_run
 ```
 
 ## 输出
@@ -63,7 +63,7 @@ python -m pump_analyst.analyze \
 默认输出到：
 
 ```text
-pump_analyst/results/<wallet>/
+data/<wallet>/analysis/
 ```
 
 文件说明：
@@ -109,8 +109,8 @@ pump_analyst/results/<wallet>/
 ## 复用流程
 
 1. 先用 `pump_monitor` 更新目标钱包交易。
-2. 生成或更新 `data/<wallet>.meme_tokens.csv`。
-3. 抓取 `data/<wallet>.market_trades/`。
+2. 生成或更新 `data/<wallet>/meme_tokens.csv`。
+3. 抓取 `data/<wallet>/market_trades/`。
 4. 运行 `python -m pump_analyst.analyze`，或使用根目录统一入口 `python pump_tool.py --wallet <WALLET> analyze`。
 5. 查看 `report.md` 得到开仓规则覆盖，查看 `entry_features.csv` 做逐币开仓复盘。
 6. 查看 `exit_report.md` 得到清仓规则覆盖，查看 `exit_features.csv` 做逐币清仓复盘。
