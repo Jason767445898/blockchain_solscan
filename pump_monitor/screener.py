@@ -61,6 +61,7 @@ class ScreenerConfig:
     rule: EntryRule | None = None
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    alert_retention_hours: float = 24.0
 
 
 class RealtimeScreener:
@@ -76,8 +77,10 @@ class RealtimeScreener:
         self.candidates: dict[str, dict[str, Any]] = {}
         self.seen_signatures: set[str] = set()
         self.alerted_mints: set[str] = set()
+        self.retention_hours = config.alert_retention_hours
         self.alert_path = Path(config.data_dir) / "realtime_screener" / "alerts.jsonl"
         self.alert_path.parent.mkdir(parents=True, exist_ok=True)
+        cleanup_expired_alerts(config.data_dir, self.retention_hours)
 
     def poll_once(self) -> dict[str, Any]:
         now = int(time.time())
@@ -154,6 +157,7 @@ class RealtimeScreener:
 
             if features["passed"] and mint not in self.alerted_mints:
                 self.alerted_mints.add(mint)
+                features["alerted_at_ts"] = int(time.time())
                 alerts.append(features)
                 append_jsonl(self.alert_path, features)
                 send_telegram_alert(self.config, features)
@@ -269,10 +273,70 @@ def append_jsonl(path: Path, record: dict[str, Any]) -> None:
         handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
 
 
-def load_alert_rows(data_dir: str, limit: int = 100) -> list[dict[str, Any]]:
+def cleanup_expired_alerts(data_dir: str, retention_hours: float) -> tuple[int, int]:
+    """Remove alerts older than retention_hours from alerts.jsonl. Returns (kept, removed)."""
     path = Path(data_dir) / "realtime_screener" / "alerts.jsonl"
     if not path.exists():
+        return (0, 0)
+    # retention_hours <= 0 means "keep everything"
+    if retention_hours <= 0:
+        with path.open("r", encoding="utf-8") as handle:
+            count = sum(1 for _ in handle)
+        return (count, 0)
+    now_ts = int(time.time())
+    cutoff_ts = now_ts - int(retention_hours * 3600)
+    kept_rows: list[dict[str, Any]] = []
+    removed = 0
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict):
+                continue
+            alerted_at = int(row.get("alerted_at_ts") or 0)
+            if alerted_at > 0 and alerted_at < cutoff_ts:
+                removed += 1
+                continue
+            kept_rows.append(row)
+    if removed:
+        with path.open("w", encoding="utf-8") as handle:
+            for row in kept_rows:
+                handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    return (len(kept_rows), removed)
+
+
+def _read_mints_path(data_dir: str) -> Path:
+    return Path(data_dir) / "realtime_screener" / "read_mints.json"
+
+
+def load_read_status(data_dir: str) -> dict[str, bool]:
+    """Load the read/unread status of alert mints. Returns {} if file missing."""
+    path = _read_mints_path(data_dir)
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_read_status(data_dir: str, read_mints: dict[str, bool]) -> None:
+    """Persist read/unread status for alert mints."""
+    path = _read_mints_path(data_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(read_mints, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def load_alert_rows(data_dir: str, limit: int = 100, retention_hours: float = 24.0) -> list[dict[str, Any]]:
+    """Load recent alerts, cleaning expired ones and merging read status."""
+    path = Path(data_dir) / "realtime_screener" / "alerts.jsonl"
+    cleanup_expired_alerts(data_dir, retention_hours)
+    if not path.exists():
         return []
+    read_status = load_read_status(data_dir)
     rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -281,6 +345,8 @@ def load_alert_rows(data_dir: str, limit: int = 100) -> list[dict[str, Any]]:
             except json.JSONDecodeError:
                 continue
             if isinstance(row, dict):
+                mint = row.get("mint", "")
+                row["_read"] = read_status.get(mint, False)
                 rows.append(row)
     return rows[-limit:]
 
@@ -313,21 +379,22 @@ def send_telegram_alert(config: ScreenerConfig, features: dict[str, Any]) -> Non
 def rows_for_table(rows: list[dict[str, Any]]) -> list[list[Any]]:
     table_rows: list[list[Any]] = []
     for row in rows:
-        table_rows.append(
-            [
-                "YES" if row.get("passed") else "",
-                row.get("score"),
-                row.get("mint"),
-                row.get("age_s"),
-                row.get("pre_trade_count"),
-                row.get("pre_unique_buyers"),
-                round(float(row.get("pre_buy_sol") or 0), 4),
-                row.get("last60_trade_count"),
-                round(float(row.get("last60_sol") or 0), 4),
-                round(float(row.get("pre_buy_ratio") or 0), 4),
-                row.get("last_trade_gap_s"),
-            ]
-        )
+        columns = [
+            "YES" if row.get("passed") else "",
+            row.get("score"),
+            row.get("mint"),
+            row.get("age_s"),
+            row.get("pre_trade_count"),
+            row.get("pre_unique_buyers"),
+            round(float(row.get("pre_buy_sol") or 0), 4),
+            row.get("last60_trade_count"),
+            round(float(row.get("last60_sol") or 0), 4),
+            round(float(row.get("pre_buy_ratio") or 0), 4),
+            row.get("last_trade_gap_s"),
+        ]
+        if "_read" in row:
+            columns.insert(0, bool(row["_read"]))
+        table_rows.append(columns)
     return table_rows
 
 

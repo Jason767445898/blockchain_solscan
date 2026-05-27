@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import gradio as gr
+import pandas as pd
 
 # --- Constants ---
 DEFAULT_WALLET = os.getenv("SOLSCAN_WALLET", "55PB376nxsrBLTZr1UdQSk6M89AxPif6oKmbmZmWq5dr")
@@ -16,6 +17,7 @@ DEFAULT_RPC = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 DEFAULT_DATA_DIR = os.getenv("SOLSCAN_OUTPUT_DIR", "data")
 DEFAULT_WEBUI_PORT = int(os.getenv("PUMP_WEBUI_PORT", "7862"))
 SCREENER_TABLE_TYPES = [
+    "bool",
     "str",
     "number",
     "str",
@@ -112,9 +114,12 @@ def do_analyze(wallet: str, data_dir: str, min_effective_sol: float = 0.005) -> 
     from pump_analyst.analyze import main as analyze_main
 
     argv = [
-        "--wallet", wallet,
-        "--data-dir", data_dir,
-        "--min-effective-sol", str(min_effective_sol),
+        "--wallet",
+        wallet,
+        "--data-dir",
+        data_dir,
+        "--min-effective-sol",
+        str(min_effective_sol),
     ]
     return _capture_output(analyze_main, argv=argv)
 
@@ -178,6 +183,7 @@ def _build_screener(
     max_candidates: int,
     telegram_bot_token: str,
     telegram_chat_id: str,
+    retention_hours: float,
 ) -> Any:
     from pump_monitor.screener import EntryRule, RealtimeScreener, ScreenerConfig
 
@@ -202,6 +208,7 @@ def _build_screener(
         rule=rule,
         telegram_bot_token=(telegram_bot_token or "").strip(),
         telegram_chat_id=(telegram_chat_id or "").strip(),
+        alert_retention_hours=retention_hours,
     )
     return RealtimeScreener(config)
 
@@ -261,12 +268,18 @@ def run_screener_once(
     max_candidates: int,
     telegram_bot_token: str,
     telegram_chat_id: str,
+    retention_hours: float,
     screener_state: Any,
 ) -> tuple[list[list[Any]], list[list[Any]], str, Any]:
     from pump_monitor.screener import load_alert_rows, rows_for_table, summarize_poll
 
     if not (helius_api_key or "").strip():
-        return [], rows_for_table(load_alert_rows(data_dir)), "需要 Helius API 密钥。", screener_state
+        return (
+            [],
+            rows_for_table(load_alert_rows(data_dir, retention_hours=retention_hours)),
+            "需要 Helius API 密钥。",
+            screener_state,
+        )
 
     settings_key = _screener_settings_key(
         helius_api_key,
@@ -304,17 +317,23 @@ def run_screener_once(
             max_candidates,
             telegram_bot_token,
             telegram_chat_id,
+            retention_hours,
         )
         screener_state._webui_settings_key = settings_key
 
     try:
         result = screener_state.poll_once()
     except Exception as exc:
-        return [], rows_for_table(load_alert_rows(data_dir)), f"[错误] {exc}", screener_state
+        return (
+            [],
+            rows_for_table(load_alert_rows(data_dir, retention_hours=retention_hours)),
+            f"[错误] {exc}",
+            screener_state,
+        )
 
     return (
         rows_for_table(result["rows"]),
-        rows_for_table(load_alert_rows(data_dir)),
+        rows_for_table(load_alert_rows(data_dir, retention_hours=retention_hours)),
         summarize_poll(result),
         screener_state,
     )
@@ -337,6 +356,7 @@ def run_screener_loop(
     max_candidates: int,
     telegram_bot_token: str,
     telegram_chat_id: str,
+    retention_hours: float,
     poll_seconds: int,
     cycles: int,
     screener_state: Any,
@@ -364,6 +384,7 @@ def run_screener_loop(
             max_candidates,
             telegram_bot_token,
             telegram_chat_id,
+            retention_hours,
             screener_state,
         )
         if index < int(cycles) - 1:
@@ -371,10 +392,56 @@ def run_screener_loop(
     return latest_candidates, latest_alerts, latest_status, screener_state
 
 
-def reset_screener_state(data_dir: str) -> tuple[list[list[Any]], list[list[Any]], str, None]:
+def reset_screener_state(data_dir: str, retention_hours: float) -> tuple[list[list[Any]], list[list[Any]], str, None]:
     from pump_monitor.screener import load_alert_rows, rows_for_table
 
-    return [], rows_for_table(load_alert_rows(data_dir)), "实时筛选器状态已重置。", None
+    return (
+        [],
+        rows_for_table(load_alert_rows(data_dir, retention_hours=retention_hours)),
+        "实时筛选器状态已重置。",
+        None,
+    )
+
+
+def on_alert_row_select(table_data: list[list[Any]], evt: gr.SelectData) -> str:
+    """Populate mint copy textbox when user selects a row in the alert table."""
+    # Gradio passes gr.Dataframe values as pandas DataFrames; convert to list[list] for consistent indexing
+    if isinstance(table_data, pd.DataFrame):
+        table_data = table_data.values.tolist()
+    if not table_data or evt.index is None:
+        return ""
+    row_idx = evt.index[0]
+    if not isinstance(row_idx, int) or row_idx < 0 or row_idx >= len(table_data):
+        return ""
+    row = table_data[row_idx]
+    if len(row) < 4:
+        return ""
+    return str(row[3]) if row[3] else ""
+
+
+def save_alert_read_status(table_data: list[list[Any]], data_dir: str) -> str:
+    """Persist read/unread status from alert table checkboxes to read_mints.json."""
+    from pump_monitor.screener import load_read_status, save_read_status
+
+    # Gradio passes gr.Dataframe values as pandas DataFrames; convert to list[list] for consistent iteration
+    if isinstance(table_data, pd.DataFrame):
+        table_data = table_data.values.tolist()
+    if not table_data:
+        return "无数据可保存。"
+    existing = load_read_status(data_dir)
+    updated = 0
+    for row in table_data:
+        if not row or len(row) < 4:
+            continue
+        mint = str(row[3]) if row[3] else ""
+        if not mint:
+            continue
+        is_read = bool(row[0]) if row else False
+        if existing.get(mint) != is_read:
+            existing[mint] = is_read
+            updated += 1
+    save_read_status(data_dir, existing)
+    return f"已保存 {updated} 条已读状态变更。"
 
 
 # --- Results Tab Helpers ---
@@ -512,7 +579,7 @@ def build_ui() -> gr.Blocks:
             # ============================
             # Realtime Screener Tab
             # ============================
-            with gr.TabItem("实时筛选器"):
+            with gr.TabItem("⏰实时筛选器"):
                 gr.Markdown("使用报告中的入场画像对新 Pump 代币进行可视化实时筛选。")
                 screener_state = gr.State(value=None)
 
@@ -573,6 +640,7 @@ def build_ui() -> gr.Blocks:
                             )
                             poll_seconds_rt = gr.Number(label="轮询间隔秒数", value=8, minimum=1, precision=0)
                             cycles_rt = gr.Number(label="循环次数", value=5, minimum=1, maximum=100, precision=0)
+                            retention_hours_rt = gr.Number(label="告警保留小时数", value=24, minimum=1, precision=0)
                         with gr.Accordion("Telegram 通知", open=False):
                             telegram_token_rt = gr.Textbox(
                                 label="机器人 Token",
@@ -619,6 +687,7 @@ def build_ui() -> gr.Blocks:
                         alert_table = gr.Dataframe(
                             label="命中提醒",
                             headers=[
+                                "已读",
                                 "匹配",
                                 "分数",
                                 "代币",
@@ -634,7 +703,14 @@ def build_ui() -> gr.Blocks:
                             datatype=SCREENER_TABLE_TYPES,
                             row_count=(8, "dynamic"),
                             wrap=True,
+                            interactive=True,
                         )
+
+                        with gr.Row():
+                            mint_copy_box = gr.Textbox(label="代币地址", elem_id="mint-copy-textbox", scale=3)
+                            copy_btn = gr.Button("📋 复制", scale=1)
+                        save_read_btn = gr.Button("保存已读状态", variant="secondary")
+                        save_status = gr.Textbox(visible=False)
 
                 screener_inputs = [
                     helius_key_input,
@@ -653,6 +729,7 @@ def build_ui() -> gr.Blocks:
                     max_candidates_rt,
                     telegram_token_rt,
                     telegram_chat_rt,
+                    retention_hours_rt,
                 ]
                 run_screener_once_btn.click(
                     fn=run_screener_once,
@@ -666,8 +743,25 @@ def build_ui() -> gr.Blocks:
                 )
                 reset_screener_btn.click(
                     fn=reset_screener_state,
-                    inputs=data_dir_input,
+                    inputs=[data_dir_input, retention_hours_rt],
                     outputs=[candidate_table, alert_table, screener_status, screener_state],
+                )
+                alert_table.select(fn=on_alert_row_select, inputs=[alert_table], outputs=[mint_copy_box])
+                save_read_btn.click(
+                    fn=save_alert_read_status,
+                    inputs=[alert_table, data_dir_input],
+                    outputs=[save_status],
+                )
+                copy_btn.click(
+                    fn=None,
+                    inputs=None,
+                    outputs=None,
+                    js=(
+                        "() => {"
+                        " const el = document.querySelector('#mint-copy-textbox textarea');"
+                        " if (el) { navigator.clipboard.writeText(el.value); }"
+                        " }"
+                    ),
                 )
 
             # ============================
@@ -765,10 +859,7 @@ def build_ui() -> gr.Blocks:
             # Market Tab
             # ============================
             with gr.TabItem("📊 市场交易"):
-                gr.Markdown(
-                    "获取每个 Meme 代币的全市场 Helius 增强交易数据。"
-                    "需要在设置中提供有效的 Helius API 密钥。"
-                )
+                gr.Markdown("获取每个 Meme 代币的全市场 Helius 增强交易数据。需要在设置中提供有效的 Helius API 密钥。")
                 with gr.Row():
                     with gr.Column(scale=1):
                         gr.Markdown(
