@@ -27,25 +27,46 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _existing_path(new_path: Path, old_path: Path) -> Path:
+    """Return new_path if it exists, else old_path if it exists, else new_path."""
+    if new_path.exists():
+        return new_path
+    if old_path.exists():
+        return old_path
+    return new_path
+
+
 def main() -> None:
     args = parse_args()
     wallet = args.wallet
     data_dir = Path(args.data_dir)
-    market_dir = data_dir / wallet / "market_trades"
+    market_dir = _existing_path(
+        data_dir / wallet / "market_trades",
+        data_dir / f"{wallet}.market_trades",
+    )
     out_dir = Path(args.output_dir) if args.output_dir else data_dir / wallet / "analysis"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    wallet_csv = _existing_path(
+        data_dir / wallet / "transactions.csv",
+        data_dir / f"{wallet}.csv",
+    )
+    meme_tokens_csv = _existing_path(
+        data_dir / wallet / "meme_tokens.csv",
+        data_dir / f"{wallet}.meme_tokens.csv",
+    )
+
     entry_samples = build_entry_samples(
         wallet=wallet,
-        wallet_csv=data_dir / wallet / "transactions.csv",
-        meme_tokens_csv=data_dir / wallet / "meme_tokens.csv",
+        wallet_csv=wallet_csv,
+        meme_tokens_csv=meme_tokens_csv,
         market_dir=market_dir,
         min_effective_sol=args.min_effective_sol,
     )
     exit_samples = build_exit_samples(
         wallet=wallet,
-        wallet_csv=data_dir / wallet / "transactions.csv",
-        meme_tokens_csv=data_dir / wallet / "meme_tokens.csv",
+        wallet_csv=wallet_csv,
+        meme_tokens_csv=meme_tokens_csv,
         market_dir=market_dir,
         min_effective_sol=args.min_effective_sol,
     )

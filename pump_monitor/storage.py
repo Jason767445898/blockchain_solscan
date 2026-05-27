@@ -90,8 +90,32 @@ class TransactionStore:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+    # ------------------------------------------------------------------
+    # backward-compat: try new hierarchical path first, fall back to old
+    # flat path so existing data from pre-refactor runs is still readable
+    # ------------------------------------------------------------------
+
+    def _readable_jsonl(self, wallet: str) -> Path | None:
+        """Return a readable JSONL path (new hierarchical or old flat), or None."""
+        new_path = self._jsonl_path(wallet)
+        if new_path.exists():
+            return new_path
+        old_path = self.output_dir / f"{wallet}.jsonl"
+        if old_path.exists():
+            return old_path
+        return new_path  # default to new for first-time writes
+
+    @staticmethod
+    def _existing_path(new_path: Path, old_path: Path) -> Path:
+        """Return new_path if it exists, otherwise old_path if it exists, else new_path."""
+        if new_path.exists():
+            return new_path
+        if old_path.exists():
+            return old_path
+        return new_path
+
     def seen_signatures(self, wallet: str) -> set[str]:
-        path = self._jsonl_path(wallet)
+        path = self._readable_jsonl(wallet) or self._jsonl_path(wallet)
         if not path.exists():
             return set()
 
@@ -108,7 +132,7 @@ class TransactionStore:
         return seen
 
     def records(self, wallet: str) -> list[dict[str, Any]]:
-        path = self._jsonl_path(wallet)
+        path = self._readable_jsonl(wallet) or self._jsonl_path(wallet)
         if not path.exists():
             return []
 
@@ -205,7 +229,7 @@ class TransactionStore:
                 writer.writerow(row)
 
     def dedupe(self, wallet: str) -> int:
-        path = self._jsonl_path(wallet)
+        path = self._readable_jsonl(wallet) or self._jsonl_path(wallet)
         if not path.exists():
             return 0
 
