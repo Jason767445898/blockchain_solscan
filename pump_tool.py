@@ -104,7 +104,7 @@ def add_market_options(parser: argparse.ArgumentParser) -> None:
 
 
 def add_analyze_options(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--analysis-output-dir", default="", help="Defaults to pump_analyst/results/<wallet>.")
+    parser.add_argument("--analysis-output-dir", default="", help="Defaults to data/<wallet>/analysis/.")
     parser.add_argument("--min-effective-sol", type=float, default=0.005)
 
 
