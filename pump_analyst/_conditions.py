@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from pump_monitor._utils import int_or_none
+
 MIN_EFFECTIVE_SOL = 0.005
 
 
@@ -589,15 +591,6 @@ def float_or_zero(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
-
-
-def int_or_none(value: Any) -> int | None:
-    try:
-        if value in (None, ""):
-            return None
-        return int(float(value))
-    except (TypeError, ValueError):
-        return None
 
 
 def safe_div(numerator: float, denominator: float) -> float | None:

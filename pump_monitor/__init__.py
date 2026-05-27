@@ -1,4 +1,4 @@
-"""Solscan-based Pump.fun wallet monitor."""
+"""Pump.fun wallet monitor and market data collector."""
 
 __all__ = ["__version__"]
 

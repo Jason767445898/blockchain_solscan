@@ -10,14 +10,14 @@ from ._conditions import (
     summarize_entry_samples,
     summarize_exit_samples,
 )
-from ._reports import write_csv, write_json, write_report, write_exit_report
+from ._reports import write_csv, write_exit_report, write_json, write_report
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Reverse-analyze meme coin entry conditions for a wallet.")
     parser.add_argument("--wallet", required=True, help="Target wallet address.")
     parser.add_argument("--data-dir", default="data", help="Directory containing wallet CSVs and market_trades.")
-    parser.add_argument("--output-dir", default="", help="Output directory. Defaults to pump_analyst/results/<wallet>.")
+    parser.add_argument("--output-dir", default="", help="Output directory. Defaults to data/<wallet>/analysis/.")
     parser.add_argument(
         "--min-effective-sol",
         type=float,
@@ -31,21 +31,21 @@ def main() -> None:
     args = parse_args()
     wallet = args.wallet
     data_dir = Path(args.data_dir)
-    market_dir = data_dir / f"{wallet}.market_trades"
-    out_dir = Path(args.output_dir) if args.output_dir else Path(__file__).parent / "results" / wallet
+    market_dir = data_dir / wallet / "market_trades"
+    out_dir = Path(args.output_dir) if args.output_dir else data_dir / wallet / "analysis"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     entry_samples = build_entry_samples(
         wallet=wallet,
-        wallet_csv=data_dir / f"{wallet}.csv",
-        meme_tokens_csv=data_dir / f"{wallet}.meme_tokens.csv",
+        wallet_csv=data_dir / wallet / "transactions.csv",
+        meme_tokens_csv=data_dir / wallet / "meme_tokens.csv",
         market_dir=market_dir,
         min_effective_sol=args.min_effective_sol,
     )
     exit_samples = build_exit_samples(
         wallet=wallet,
-        wallet_csv=data_dir / f"{wallet}.csv",
-        meme_tokens_csv=data_dir / f"{wallet}.meme_tokens.csv",
+        wallet_csv=data_dir / wallet / "transactions.csv",
+        meme_tokens_csv=data_dir / wallet / "meme_tokens.csv",
         market_dir=market_dir,
         min_effective_sol=args.min_effective_sol,
     )

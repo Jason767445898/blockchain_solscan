@@ -9,7 +9,6 @@ import requests
 
 from ._base_client import BaseApiClient
 
-
 DEFAULT_RPC_URL = "https://api.mainnet-beta.solana.com"
 
 

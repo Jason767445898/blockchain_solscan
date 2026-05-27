@@ -55,7 +55,8 @@ def write_report(
     for name, row in combos.items():
         lines.append(
             f"- `{name}`：`{row['hit']}/{row['total']}`，`{fmt(row['rate'] * 100)}%`，"
-            f"命中样本 ROI 中位数 `{fmt(row.get('median_roi'))}`，正收益 `{row.get('positive_roi')}/{row.get('roi_count')}`"
+            f"命中样本 ROI 中位数 `{fmt(row.get('median_roi'))}`，"
+            f"正收益 `{row.get('positive_roi')}/{row.get('roi_count')}`"
         )
 
     lines.extend(
@@ -123,7 +124,8 @@ def write_exit_report(
     for name, row in combos.items():
         lines.append(
             f"- `{name}`：`{row['hit']}/{row['total']}`，`{fmt(row['rate'] * 100)}%`，"
-            f"命中样本 ROI 中位数 `{fmt(row.get('median_roi'))}`，正收益 `{row.get('positive_roi')}/{row.get('roi_count')}`"
+            f"命中样本 ROI 中位数 `{fmt(row.get('median_roi'))}`，"
+            f"正收益 `{row.get('positive_roi')}/{row.get('roi_count')}`"
         )
 
     lines.extend(

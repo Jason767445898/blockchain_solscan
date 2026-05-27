@@ -78,7 +78,7 @@ class RealtimeScreener:
         self.seen_signatures: set[str] = set()
         self.alerted_mints: set[str] = set()
         self.retention_hours = config.alert_retention_hours
-        self.alert_path = Path(config.data_dir) / "realtime_screener" / "alerts.jsonl"
+        self.alert_path = Path(config.data_dir) / "screener" / "alerts.jsonl"
         self.alert_path.parent.mkdir(parents=True, exist_ok=True)
         cleanup_expired_alerts(config.data_dir, self.retention_hours)
 
@@ -275,7 +275,7 @@ def append_jsonl(path: Path, record: dict[str, Any]) -> None:
 
 def cleanup_expired_alerts(data_dir: str, retention_hours: float) -> tuple[int, int]:
     """Remove alerts older than retention_hours from alerts.jsonl. Returns (kept, removed)."""
-    path = Path(data_dir) / "realtime_screener" / "alerts.jsonl"
+    path = Path(data_dir) / "screener" / "alerts.jsonl"
     if not path.exists():
         return (0, 0)
     # retention_hours <= 0 means "keep everything"
@@ -308,11 +308,15 @@ def cleanup_expired_alerts(data_dir: str, retention_hours: float) -> tuple[int, 
 
 
 def _read_mints_path(data_dir: str) -> Path:
-    return Path(data_dir) / "realtime_screener" / "read_mints.json"
+    return Path(data_dir) / "screener" / "read_mints.json"
 
 
-def load_read_status(data_dir: str) -> dict[str, bool]:
-    """Load the read/unread status of alert mints. Returns {} if file missing."""
+def load_read_status(data_dir: str) -> dict[str, dict[str, Any]]:
+    """Load read/unread status of alert mints.
+
+    Backward-compatible: normalizes old {mint: bool} and new
+    {mint: {read: bool, marked_at: str|null}} to the dict-of-dicts form.
+    """
     path = _read_mints_path(data_dir)
     if not path.exists():
         return {}
@@ -320,11 +324,25 @@ def load_read_status(data_dir: str) -> dict[str, bool]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        return {}
+    result: dict[str, dict[str, Any]] = {}
+    for mint, val in data.items():
+        if isinstance(val, bool):
+            result[mint] = {"read": val, "marked_at": None}
+        elif isinstance(val, dict):
+            result[mint] = {
+                "read": bool(val.get("read", False)),
+                "marked_at": val.get("marked_at"),
+            }
+    return result
 
 
-def save_read_status(data_dir: str, read_mints: dict[str, bool]) -> None:
-    """Persist read/unread status for alert mints."""
+def save_read_status(data_dir: str, read_mints: dict[str, dict[str, Any]]) -> None:
+    """Persist read/unread status for alert mints.
+
+    Format per mint: {"read": bool, "marked_at": str|null}.
+    """
     path = _read_mints_path(data_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(read_mints, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
@@ -332,7 +350,7 @@ def save_read_status(data_dir: str, read_mints: dict[str, bool]) -> None:
 
 def load_alert_rows(data_dir: str, limit: int = 100, retention_hours: float = 24.0) -> list[dict[str, Any]]:
     """Load recent alerts, cleaning expired ones and merging read status."""
-    path = Path(data_dir) / "realtime_screener" / "alerts.jsonl"
+    path = Path(data_dir) / "screener" / "alerts.jsonl"
     cleanup_expired_alerts(data_dir, retention_hours)
     if not path.exists():
         return []
@@ -346,7 +364,9 @@ def load_alert_rows(data_dir: str, limit: int = 100, retention_hours: float = 24
                 continue
             if isinstance(row, dict):
                 mint = row.get("mint", "")
-                row["_read"] = read_status.get(mint, False)
+                entry = read_status.get(mint, {})
+                row["_read"] = entry.get("read", False)
+                row["_marked_at"] = entry.get("marked_at")
                 rows.append(row)
     return rows[-limit:]
 
@@ -394,6 +414,9 @@ def rows_for_table(rows: list[dict[str, Any]]) -> list[list[Any]]:
         ]
         if "_read" in row:
             columns.insert(0, bool(row["_read"]))
+        if "_marked_at" in row:
+            marked = row.get("_marked_at")
+            columns.insert(1, str(marked) if marked else "")
         table_rows.append(columns)
     return table_rows
 

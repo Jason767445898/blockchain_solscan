@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     dedupe = subparsers.add_parser("dedupe", help="Deduplicate local wallet JSONL/CSV output.")
     dedupe.set_defaults(func=run_dedupe)
 
-    tokens = subparsers.add_parser("tokens", help="Build data/<wallet>.meme_tokens.csv from wallet output.")
+    tokens = subparsers.add_parser("tokens", help="Build data/<wallet>/meme_tokens.csv from wallet output.")
     tokens.set_defaults(func=run_tokens)
 
     market = subparsers.add_parser("market", help="Fetch market-wide Helius transactions for traded mints.")

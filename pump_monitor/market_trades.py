@@ -14,7 +14,6 @@ import requests
 from ._base_client import BaseApiClient
 from ._utils import as_list, float_or_none, int_or_none, str_or_none
 
-
 DEFAULT_HELIUS_BASE_URL = "https://api-mainnet.helius-rpc.com"
 LAMPORTS_PER_SOL = 1_000_000_000
 

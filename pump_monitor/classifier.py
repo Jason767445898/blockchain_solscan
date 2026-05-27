@@ -4,7 +4,6 @@ from typing import Any
 
 from .models import PumpClassification
 
-
 # Pump.fun and PumpSwap program IDs that are commonly visible in Solana txs.
 # Keep this list configurable in code so new Pump programs can be added quickly.
 PUMP_FUN_PROGRAM_IDS = {

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from ._utils import int_or_none
 
 TRADE_CATEGORIES = {"pump_buy", "pump_sell"}
 
@@ -61,7 +62,7 @@ def summarize_meme_tokens(records: list[dict[str, Any]]) -> list[MemeTokenSummar
             continue
 
         sol_change = _number(record.get("sol_change"))
-        block_time = _int_or_none(record.get("block_time"))
+        block_time = int_or_none(record.get("block_time"))
         for change in record.get("token_changes") or []:
             if not isinstance(change, dict):
                 continue
@@ -106,7 +107,7 @@ def token_amount_ui(change: dict[str, Any]) -> float | None:
     amount = _number(change.get("amount"))
     if amount is None:
         return None
-    decimals = _int_or_none(change.get("decimals")) or 0
+    decimals = int_or_none(change.get("decimals")) or 0
     return amount / (10**decimals)
 
 
@@ -124,19 +125,6 @@ def _number(value: Any) -> float | None:
     if isinstance(value, str):
         try:
             return float(value)
-        except ValueError:
-            return None
-    return None
-
-
-def _int_or_none(value: Any) -> int | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        try:
-            return int(value)
         except ValueError:
             return None
     return None

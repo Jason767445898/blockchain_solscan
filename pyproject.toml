@@ -5,6 +5,7 @@ description = "Pump.fun wallet monitor, market collector, and behavior analyst."
 requires-python = ">=3.9"
 dependencies = [
     "requests>=2.31.0",
+    "urllib3<2",
     "gradio>=4.0.0",
 ]
 

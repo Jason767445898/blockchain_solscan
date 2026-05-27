@@ -8,10 +8,12 @@ def int_or_none(value: Any) -> int | None:
         return None
     if isinstance(value, int):
         return value
+    if isinstance(value, float):
+        return int(value)
     if isinstance(value, str):
         try:
-            return int(value)
-        except ValueError:
+            return int(float(value))
+        except (ValueError, TypeError):
             return None
     return None
 

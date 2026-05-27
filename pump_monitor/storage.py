@@ -7,7 +7,6 @@ from typing import Any
 
 from .meme_tokens import MemeTokenSummary, summarize_meme_tokens
 
-
 CSV_COLUMNS = [
     "wallet",
     "signature",
@@ -129,6 +128,7 @@ class TransactionStore:
 
     def write_meme_token_csv(self, wallet: str, summaries: list[MemeTokenSummary] | None = None) -> Path:
         path = self._meme_tokens_csv_path(wallet)
+        path.parent.mkdir(parents=True, exist_ok=True)
         rows = summaries if summaries is not None else self.meme_token_summaries(wallet)
         with path.open("w", encoding="utf-8", newline="") as csv_file:
             writer = csv.DictWriter(csv_file, fieldnames=MEME_TOKEN_COLUMNS, extrasaction="ignore")
@@ -186,6 +186,7 @@ class TransactionStore:
             return
         jsonl_path = self._jsonl_path(wallet)
         csv_path = self._csv_path(wallet)
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
 
         with jsonl_path.open("a", encoding="utf-8") as jsonl:
             for record in records:
@@ -237,16 +238,16 @@ class TransactionStore:
         return len(by_signature)
 
     def _jsonl_path(self, wallet: str) -> Path:
-        return self.output_dir / f"{wallet}.jsonl"
+        return self.output_dir / wallet / "transactions.jsonl"
 
     def _csv_path(self, wallet: str) -> Path:
-        return self.output_dir / f"{wallet}.csv"
+        return self.output_dir / wallet / "transactions.csv"
 
     def _meme_tokens_csv_path(self, wallet: str) -> Path:
-        return self.output_dir / f"{wallet}.meme_tokens.csv"
+        return self.output_dir / wallet / "meme_tokens.csv"
 
     def meme_tokens_csv_path(self, wallet: str) -> Path:
         return self._meme_tokens_csv_path(wallet)
 
     def _market_trades_dir(self, wallet: str) -> Path:
-        return self.output_dir / f"{wallet}.market_trades"
+        return self.output_dir / wallet / "market_trades"
